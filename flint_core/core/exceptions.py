@@ -24,6 +24,7 @@ class CatalogParseError(FlintError):
 
     pass
 
+
 class ProjectInitializationError(FlintError):
     """Raised when the project scaffolding pipeline encounters a failure."""
 
