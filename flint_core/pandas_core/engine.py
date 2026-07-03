@@ -30,11 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class PandasFormatHandler(abc.ABC):
-    """Abstract Base Class governing local format-specific operations.
-
-    Leverages metaprogramming to enforce definition-time self-registration
-    across concrete extension subclasses.
-    """
+    """Abstract Base Class governing local format-specific operations."""
 
     __slots__ = ()
     format_key: ClassVar[str] = ""
@@ -138,7 +134,6 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         """Loads data into a local or cloud Pandas DataFrame with unified options."""
         options = dict(metadata.get("options", {})) if metadata else {}
 
-        # Phase 1: Bridge cloud architecture credentials safely to fsspec storage options
         if metadata and "infrastructure" in metadata:
             infra = metadata["infrastructure"]
             if isinstance(infra, dict) and "storage_options" not in options:
@@ -169,7 +164,6 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         """Saves a local or cloud Pandas DataFrame executing strict validations."""
         options = dict(metadata.get("options", {})) if metadata else {}
 
-        # Phase 1: Inject dynamic multi-cloud architecture setups safely to fsspec
         if metadata and "infrastructure" in metadata:
             infra = metadata["infrastructure"]
             if isinstance(infra, dict) and "storage_options" not in options:
@@ -211,7 +205,7 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         handler.write(df_enforced, path, options)
 
     def _apply_primitive_dtypes(self, df: pd.DataFrame, dtype_dict: Dict[str, Any]) -> pd.DataFrame:
-        """Apppies primitive data types safely onto an existing DataFrame."""
+        """Applies primitive data types safely onto an existing DataFrame."""
         for col_name, dtype_val in dtype_dict.items():
             if col_name in df.columns:
                 df[col_name] = df[col_name].astype(dtype_val)
@@ -347,10 +341,88 @@ class ORCFormatHandler(PandasFormatHandler):
         df.to_orc(path, **options)
 
 
+class DeltaFormatHandler(PandasFormatHandler):
+    """Strategy handler for Delta Lake tables using deltalake bindings."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "delta"
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        try:
+            import deltalake
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'deltalake' library is required to read delta format.") from e
+
+        opts = options.copy()
+        version = opts.pop("versionAsOf", None)
+        as_of = opts.pop("timestampAsOf", None)
+
+        dt = deltalake.DeltaTable(path, version=version, datetime=as_of, **opts)
+        return dt.to_pandas()
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        try:
+            import deltalake
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'deltalake' library is required to write delta format.") from e
+
+        opts = options.copy()
+        mode = opts.pop("mode", "append")
+        deltalake.write_deltalake(path, df, mode=mode, **opts)
+
+
+class IcebergFormatHandler(PandasFormatHandler):
+    """Strategy handler for Apache Iceberg tables using pyiceberg integration."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "iceberg"
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        try:
+            from pyiceberg.catalog import load_catalog
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'pyiceberg' library is required to read iceberg format.") from e
+
+        opts = options.copy()
+        catalog_name = opts.pop("catalog_name", "default")
+        catalog = load_catalog(catalog_name, **opts)
+        table = catalog.load_table(path)
+
+        version = opts.pop("versionAsOf", None)
+        if version is not None:
+            return table.scan(snapshot_id=int(version)).to_pandas()
+        return table.scan().to_pandas()
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        try:
+            from pyiceberg.catalog import load_catalog
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'pyiceberg' library is required to write iceberg format.") from e
+        opts = options.copy()
+        catalog_name = opts.pop("catalog_name", "default")
+        catalog = load_catalog(catalog_name, **opts)
+        table = catalog.load_table(path)
+        table.append(df)
+
+
 # Initialize internal default format definitions seamlessly through side-effects
 _DEFAULTS = [
     CSVFormatHandler,
     ParquetFormatHandler,
     JSONFormatHandler,
     ORCFormatHandler,
+    DeltaFormatHandler,
+    IcebergFormatHandler,
 ]

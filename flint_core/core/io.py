@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from urllib.parse import urlparse
 
 from flint_core.core.base import EngineRegistry
@@ -46,23 +46,42 @@ class DataLoader:
         dataset_name: str,
         spark: Optional[Any] = None,
         options: Optional[Dict[str, Any]] = None,
+        version: Optional[Union[int, str]] = None,
+        as_of: Optional[str] = None,
     ) -> Any:
-        """Loads a dataset from storage utilizing dynamic engine dispatching."""
+        """Loads a dataset from storage utilizing dynamic engine dispatching.
+
+        Args:
+            dataset_name: Name of the target dataset configuration key.
+            spark: Optional active distributed SparkSession manager reference.
+            options: Optional runtime reading options overrides.
+            version: Optional target version index for Lakehouse time travel.
+            as_of: Optional chronological timestamp for historical snapshots.
+
+        Returns:
+            Any: The loaded DataFrame structure.
+        """
         dataset: DatasetConfiguration = self.catalog.get_dataset(dataset_name)
         resolved_path = _resolve_path(dataset.storage_path, self.catalog.project_root)
 
-        # Merge static catalog options with dynamic runtime overrides
         raw_catalog_opts = dataset.metadata.get("options", {})
         catalog_options = raw_catalog_opts if isinstance(raw_catalog_opts, dict) else {}
         runtime_options = options if options is not None else {}
 
-        combined_metadata = dataset.metadata.copy()
-        combined_metadata["options"] = {
+        combined_options = {
             **catalog_options,
             **runtime_options,
         }
 
-        # Pure Inversion of Control pattern execution
+        # Inject unified time-travel parameters for Lakehouse layers
+        if version is not None:
+            combined_options["versionAsOf"] = version
+        if as_of is not None:
+            combined_options["timestampAsOf"] = as_of
+
+        combined_metadata = dataset.metadata.copy()
+        combined_metadata["options"] = combined_options
+
         engine = EngineRegistry.get_engine(dataset.engine)
         return engine.load(
             path=resolved_path,
@@ -94,7 +113,6 @@ class DataSaver:
         dataset = self.catalog.get_dataset(dataset_name)
         resolved_path = _resolve_path(dataset.storage_path, self.catalog.project_root)
 
-        # Merge static catalog options with dynamic runtime overrides
         raw_catalog_opts = dataset.metadata.get("options", {})
         catalog_options = raw_catalog_opts if isinstance(raw_catalog_opts, dict) else {}
         runtime_options = options if options is not None else {}
@@ -105,7 +123,6 @@ class DataSaver:
             **runtime_options,
         }
 
-        # Dynamic routing leveraging EngineRegistry injecting catalog columns
         engine = EngineRegistry.get_engine(dataset.engine)
         engine.save(
             df=df,

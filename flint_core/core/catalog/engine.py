@@ -57,14 +57,7 @@ class DataCatalog:
             return self._datasets[dataset_name]
 
     def get_spark_configuration(self) -> Dict[str, Any]:
-        """Parses and extracts global parameters inside conf/spark.yml.
-
-        Returns:
-            Dict[str, Any]: Flat configuration parameters dictionary mapping.
-
-        Raises:
-            CatalogParseError: When structural syntax validation fails.
-        """
+        """Parses and extracts global parameters inside conf/spark.yml."""
         spark_path = self.project_root / "conf" / "spark.yml"
         if not spark_path.exists():
             spark_path = self.project_root / "conf" / "spark.yaml"
@@ -84,12 +77,26 @@ class DataCatalog:
             return {str(k): v for k, v in content.items()}
         return {}
 
-    def load(self, dataset_name: str, spark: Optional[Any] = None) -> Any:
+    def load(
+        self,
+        dataset_name: str,
+        spark: Optional[Any] = None,
+        version: Optional[Union[int, str]] = None,
+        as_of: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Loads a dataset from storage utilizing dynamic engine dispatching."""
         from flint_core.core.io import DataLoader
 
         with self._lock:
             loader = DataLoader(catalog=self)
-            return loader.load(dataset_name, spark=spark)
+            return loader.load(
+                dataset_name,
+                spark=spark,
+                options=options,
+                version=version,
+                as_of=as_of,
+            )
 
     def save(
         self,
@@ -132,15 +139,14 @@ class DataCatalog:
             if (parent / "pyproject.toml").exists():
                 self.project_root = parent
                 return parent / "conf" / "catalog"
-        raise FileNotFoundError("Configuration file (pyproject.toml) missing.")
+        raise FileNotFoundError("Could not locate root pyproject.toml environmental anchor.")
 
-    def _find_project_root_from_path(self, path: Path) -> None:
-        start_dir = path if path.is_dir() else path.parent
-        for parent in [start_dir] + list(start_dir.parents):
+    def _find_project_root_from_path(self, target_path: Path) -> None:
+        for parent in [target_path] + list(target_path.parents):
             if (parent / "pyproject.toml").exists():
                 self.project_root = parent
                 return
-        self.project_root = start_dir
+        self.project_root = target_path
 
     def _load_catalog_sources(self, path: Path) -> None:
         if path.is_file() and path.suffix in (".yml", ".yaml"):
