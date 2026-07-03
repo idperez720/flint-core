@@ -230,3 +230,44 @@ def test_spark_engine_infrastructure_injection(mock_advanced_io_environment: Dat
         )
         # Missing prefix, should have been injected automatically by framework
         assert spark_session.conf.get("spark.hadoop.fs.azure.account.key.dummy") == "secret-token"
+
+
+def test_pandas_engine_cloud_infrastructure_injection(tmp_path: Path) -> None:
+    """Asserts that infrastructure definitions map directly to fsspec storage options."""
+    pd = pytest.importorskip("pandas")
+    catalog_dir = tmp_path / "conf" / "catalog"
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(tmp_path / "pyproject.toml", "w", encoding="utf-8") as f:
+        f.write('[project]\nname = "test-pandas-cloud"\n')
+
+    cloud_catalog = {
+        "pandas_s3_secured": {
+            "engine": "pandas",
+            "format": "parquet",
+            "storage_path": "s3://secure-bucket/raw/events.parquet",
+            "infrastructure": {
+                "key": "aws-access-key-id",
+                "secret": "aws-secret-access-key",
+            },
+        }
+    }
+
+    with open(catalog_dir / "cloud.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(cloud_catalog, f)
+
+    catalog = DataCatalog(catalog_path=catalog_dir)
+    loader = DataLoader(catalog=catalog)
+
+    with patch("pandas.read_parquet") as mock_parquet_reader:
+        try:
+            loader.load("pandas_s3_secured")
+        except Exception:
+            pass
+
+        # Verify that storage_options were implicitly channeled down to fsspec
+        mock_parquet_reader.assert_called_once()
+        kwargs = mock_parquet_reader.call_args[1]
+        assert "storage_options" in kwargs
+        assert kwargs["storage_options"]["key"] == "aws-access-key-id"
+        assert kwargs["storage_options"]["secret"] == "aws-secret-access-key"
