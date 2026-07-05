@@ -45,13 +45,13 @@ logger = logging.getLogger(__name__)
 
 
 class SparkFormatHandler(abc.ABC):
-    """Abstract Base Class governing format-specific operations."""
+    """Abstract Base Class governing format-specific distributed operations."""
 
     __slots__ = ()
     format_key: ClassVar[str] = ""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Automatically registers inheriting formats into the global engine."""
+        """Automatically registers inheriting formats into global registry pools."""
         super().__init_subclass__(**kwargs)
         fmt = getattr(cls, "format_key", "").strip().lower()
         if fmt:
@@ -59,7 +59,7 @@ class SparkFormatHandler(abc.ABC):
 
     @abc.abstractmethod
     def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
-        """Reads data from the specified path using the provided reader configuration."""
+        """Reads data from the specified path using the provided reader."""
         pass
 
     @abc.abstractmethod
@@ -68,13 +68,32 @@ class SparkFormatHandler(abc.ABC):
         pass
 
 
+class SparkDatabaseFormatHandler(SparkFormatHandler, abc.ABC):
+    """Abstract class bridging Spark relational pipelines via JDBC drivers."""
+
+    __slots__ = ()
+
+    def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
+        if "." in path and "/" not in path:
+            session = SparkSession.getActiveSession()
+            return session.table(path)
+        return reader.format("jdbc").option("dbtable", path).load()
+
+    def write(self, writer: DataFrameWriter, path: str) -> None:
+        writer.format("jdbc").option("dbtable", path).save()
+
+
 # =============================================================================
 # CORE ENTERPRISE SPARK EXECUTION ENGINE
 # =============================================================================
 
 
 class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataFrame]):
-    """Enterprise PySpark engine orchestrating advanced multi-format schemas."""
+    """Enterprise PySpark engine orchestrating advanced multi-format schemas.
+
+    Handles explicit struct field schema building, in-memory date schema string
+    conversions fallbacks, and multi-cloud credential injections contexts.
+    """
 
     __slots__ = ()
 
@@ -192,7 +211,6 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
         if metadata and "options" in metadata:
             opts = metadata["options"]
             if isinstance(opts, dict):
-                # Map Spark Time Travel native keywords cleanly
                 spark_opts = opts.copy()
                 version = spark_opts.pop("versionAsOf", None)
                 as_of = spark_opts.pop("timestampAsOf", None)
@@ -206,7 +224,18 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
 
         df = handler.read(reader, path, schema=spark_schema)
 
-        if lazy_projections and fmt not in ("delta", "iceberg"):
+        if lazy_projections and fmt not in (
+            "delta",
+            "iceberg",
+            "postgres",
+            "postgresql",
+            "mysql",
+            "duckdb",
+            "sqlite",
+            "databricks",
+            "snowflake",
+            "bigquery",
+        ):
             df = df.select(*lazy_projections)
 
         return df
@@ -235,7 +264,18 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
             if isinstance(opts, dict):
                 writer = writer.options(**opts)
 
-        if columns and data_format.strip().lower() not in ("delta", "iceberg"):
+        if columns and data_format.strip().lower() not in (
+            "delta",
+            "iceberg",
+            "postgres",
+            "postgresql",
+            "mysql",
+            "duckdb",
+            "sqlite",
+            "databricks",
+            "snowflake",
+            "bigquery",
+        ):
             catalog_names = [col.name for col in columns]
             input_cols: Set[str] = set(df.columns)
             missing_cols = [c for c in catalog_names if c not in input_cols]
@@ -314,6 +354,9 @@ class DeltaFormatHandler(SparkFormatHandler):
     format_key: ClassVar[str] = "delta"
 
     def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
+        if "." in path and "/" not in path:
+            session = SparkSession.getActiveSession()
+            return session.table(path)
         return reader.format("delta").load(path)
 
     def write(self, writer: DataFrameWriter, path: str) -> None:
@@ -333,6 +376,56 @@ class IcebergFormatHandler(SparkFormatHandler):
         writer.format("iceberg").save(path)
 
 
+class PostgresFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "postgres"
+
+
+class PostgresqlFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "postgresql"
+
+
+class MySQLFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "mysql"
+
+
+class DuckDBFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "duckdb"
+
+
+class SQLiteFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "sqlite"
+
+
+class DatabricksFormatHandler(SparkDatabaseFormatHandler):
+    format_key = "databricks"
+
+
+class SnowflakeFormatHandler(SparkFormatHandler):
+    """Strategy handler for Snowflake cloud warehouse connections."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "snowflake"
+
+    def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
+        return reader.format("net.snowflake.spark.snowflake").option("dbtable", path).load()
+
+    def write(self, writer: DataFrameWriter, path: str) -> None:
+        writer.format("net.snowflake.spark.snowflake").option("dbtable", path).save()
+
+
+class BigQueryFormatHandler(SparkFormatHandler):
+    """Strategy handler for Google BigQuery ecosystem connections."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "bigquery"
+
+    def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
+        return reader.format("bigquery").option("table", path).load()
+
+    def write(self, writer: DataFrameWriter, path: str) -> None:
+        writer.format("bigquery").option("table", path).save()
+
+
 # Initialize internal default format definitions seamlessly through side-effects
 _DEFAULTS = [
     CSVFormatHandler,
@@ -341,4 +434,12 @@ _DEFAULTS = [
     ORCFormatHandler,
     DeltaFormatHandler,
     IcebergFormatHandler,
+    PostgresFormatHandler,
+    PostgresqlFormatHandler,
+    MySQLFormatHandler,
+    DuckDBFormatHandler,
+    SQLiteFormatHandler,
+    DatabricksFormatHandler,
+    SnowflakeFormatHandler,
+    BigQueryFormatHandler,
 ]

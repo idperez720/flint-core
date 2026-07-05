@@ -7,7 +7,17 @@ import decimal
 import logging
 import threading
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Mapping, Optional, Set, Tuple, Type
+from typing import (
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+)
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -30,13 +40,13 @@ logger = logging.getLogger(__name__)
 
 
 class PandasFormatHandler(abc.ABC):
-    """Abstract Base Class governing local format-specific operations."""
+    """Abstract Base Class governing local format-specific file operations."""
 
     __slots__ = ()
     format_key: ClassVar[str] = ""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
-        """Automatically registers inheriting formats into the global engine."""
+        """Automatically registers inheriting formats into global registry pools."""
         super().__init_subclass__(**kwargs)
         fmt = getattr(cls, "format_key", "").strip().lower()
         if fmt:
@@ -59,13 +69,65 @@ class PandasFormatHandler(abc.ABC):
         pass
 
 
+class PandasDatabaseFormatHandler(PandasFormatHandler, abc.ABC):
+    """Abstract class bridging relational database engines via custom connectors."""
+
+    __slots__ = ()
+
+    def _get_connection(self, options: Dict[str, Any]) -> Any:
+        """Resolves active connections utilizing specified protocol wrappers.
+
+        Args:
+            options: Configuration options holding endpoint details.
+
+        Returns:
+            Any: Target driver engine connection or SQLAlchemy pool.
+        """
+        url = options.get("url")
+        connector = options.get("connector")
+
+        if connector == "jdbc":
+            try:
+                import jaydebeapi
+            except ImportError as e:
+                raise UnsupportedBackendError("The 'jaydebeapi' package is required for JDBC connections.") from e
+            return jaydebeapi.connect(
+                options.get("driver"),
+                url,
+                options.get("credentials", []),
+                options.get("jars"),
+            )
+
+        if connector == "odbc":
+            try:
+                import pyodbc
+            except ImportError as e:
+                raise UnsupportedBackendError("The 'pyodbc' package is required for ODBC connections.") from e
+            dsn = options.get("dsn")
+            if dsn:
+                rem_keys = ("url", "dsn")
+                kv_pair = [f"{k}={v}" for k, v in options.items() if k not in rem_keys]
+                return pyodbc.connect(f"DSN={dsn};" + ";".join(kv_pair))
+            return pyodbc.connect(url)
+
+        from sqlalchemy import create_engine
+
+        if not url:
+            raise ValueError("Database token connection 'url' is required.")
+        return create_engine(url)
+
+
 # =============================================================================
 # CORE ENTERPRISE PANDAS RUNTIME ENGINE
 # =============================================================================
 
 
 class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.DataFrame]):
-    """Unified Pandas engine orchestrating agnostically decoupled multi-format inputs."""
+    """Unified Pandas engine orchestrating dynamic decoupled format strategies.
+
+    Manages physical type casting enforcement, date parsing parameters, and
+    provides side-effect strategy hooks for cloud databases.
+    """
 
     __slots__ = ()
 
@@ -100,7 +162,7 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
 
         if not handler_class:
             raise UnsupportedBackendError(
-                f"No storage strategy registered inside Pandas engine for format: "
+                f"No storage strategy registered inside Pandas engine: "
                 f"'{data_format}'. Supported options: "
                 f"{list(self.FORMAT_REGISTRY.keys())}"
             )
@@ -139,6 +201,9 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
             if isinstance(infra, dict) and "storage_options" not in options:
                 options["storage_options"] = {str(k): v for k, v in infra.items()}
 
+        if metadata and "connector" in metadata and metadata["connector"]:
+            options["connector"] = metadata["connector"]
+
         handler = self._resolve_format_handler(data_format)
         fmt_clean = data_format.strip().lower()
 
@@ -169,10 +234,33 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
             if isinstance(infra, dict) and "storage_options" not in options:
                 options["storage_options"] = {str(k): v for k, v in infra.items()}
 
-        handler = self._resolve_format_handler(data_format)
-        is_cloud = urlparse(path).scheme in ("s3", "s3a", "s3n", "gs", "gcs", "abfss", "az")
+        if metadata and "connector" in metadata and metadata["connector"]:
+            options["connector"] = metadata["connector"]
 
-        if not is_cloud:
+        handler = self._resolve_format_handler(data_format)
+        fmt_clean = data_format.strip().lower()
+
+        is_relational = fmt_clean in (
+            "postgres",
+            "postgresql",
+            "mysql",
+            "duckdb",
+            "sqlite",
+            "snowflake",
+            "bigquery",
+            "databricks",
+        )
+        is_cloud = urlparse(path).scheme in (
+            "s3",
+            "s3a",
+            "s3n",
+            "gs",
+            "gcs",
+            "abfss",
+            "az",
+        )
+
+        if not is_cloud and not is_relational:
             file_path = Path(path)
             if file_path.exists():
                 if mode == "error":
@@ -417,6 +505,184 @@ class IcebergFormatHandler(PandasFormatHandler):
         table.append(df)
 
 
+class RelationalDBFormatHandler(PandasDatabaseFormatHandler):
+    """Symmetrical concrete database proxy routing mapped relational profiles."""
+
+    __slots__ = ()
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        conn = self._get_connection(options)
+        opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
+        if hasattr(conn, "connect"):
+            return pd.read_sql_table(path, con=conn, **opts)
+        return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **opts)
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        conn = self._get_connection(options)
+        opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
+        if_exists_val = opts.pop("if_exists", "fail")
+        if hasattr(conn, "connect"):
+            df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **opts)
+        else:
+            raise UnsupportedBackendError("Bulk loading over raw connections requires SQLAlchemy.")
+
+
+class PostgresFormatHandler(RelationalDBFormatHandler):
+    format_key = "postgres"
+
+
+class PostgresqlFormatHandler(RelationalDBFormatHandler):
+    format_key = "postgresql"
+
+
+class MySQLFormatHandler(RelationalDBFormatHandler):
+    format_key = "mysql"
+
+
+class DuckDBFormatHandler(RelationalDBFormatHandler):
+    format_key = "duckdb"
+
+
+class SQLiteFormatHandler(RelationalDBFormatHandler):
+    format_key = "sqlite"
+
+
+class DatabricksFormatHandler(PandasDatabaseFormatHandler):
+    """Strategy handler for Databricks SQL Warehouses via connectors."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "databricks"
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        opts = options.copy()
+        connector = opts.get("connector", "native")
+
+        if connector == "native":
+            try:
+                from databricks import sql
+            except ImportError as e:
+                raise UnsupportedBackendError("The 'databricks-sql-connector' package is required.") from e
+            server_hostname = opts.pop("server_hostname", None)
+            http_path = opts.pop("http_path", None)
+            access_token = opts.pop("access_token", None)
+            with sql.connect(
+                server_hostname=server_hostname,
+                http_path=http_path,
+                access_token=access_token,
+                **opts,
+            ) as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(f"SELECT * FROM {path}")
+                    return cursor.fetchall_as_pandas()
+
+        conn = self._get_connection(options)
+        db_opts = {k: v for k, v in opts.items() if k not in ("url", "driver", "connector")}
+        if hasattr(conn, "connect"):
+            return pd.read_sql_table(path, con=conn, **db_opts)
+        return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **db_opts)
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        conn = self._get_connection(options)
+        opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
+        if_exists_val = opts.pop("if_exists", "fail")
+        if hasattr(conn, "connect"):
+            df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **opts)
+        else:
+            raise UnsupportedBackendError("Writing to Databricks over JDBC requires SQLAlchemy.")
+
+
+class SnowflakeFormatHandler(PandasFormatHandler):
+    """Highly optimized bulk loading strategy wrapper for SnowflakeWarehouses."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "snowflake"
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        try:
+            import snowflake.connector
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'snowflake-connector-python' is required.") from e
+        opts = options.copy()
+        conn = snowflake.connector.connect(**opts)
+        cursor = conn.cursor()
+        try:
+            cursor.execute(f"SELECT * FROM {path}")
+            return cursor.fetch_pandas_all()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        try:
+            import snowflake.connector
+            from snowflake.connector.pandas_tools import write_pandas
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'snowflake-connector-python' is required.") from e
+        opts = options.copy()
+        conn_keys = {
+            "user",
+            "password",
+            "account",
+            "warehouse",
+            "database",
+            "schema",
+            "role",
+        }
+        conn_opts = {k: opts.pop(k) for k in list(opts.keys()) if k in conn_keys}
+        conn = snowflake.connector.connect(**conn_opts)
+        try:
+            write_pandas(conn, df, table_name=path, **opts)
+        finally:
+            conn.close()
+
+
+class BigQueryFormatHandler(PandasFormatHandler):
+    """Highly optimized bulk loading strategy wrapper for Google BigQuery."""
+
+    __slots__ = ()
+    format_key: ClassVar[str] = "bigquery"
+
+    def read(
+        self,
+        path: str,
+        dtype_dict: Dict[str, Any],
+        parse_dates: List[str],
+        options: Dict[str, Any],
+    ) -> pd.DataFrame:
+        try:
+            import pandas_gbq
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'pandas-gbq' library is required.") from e
+        return pandas_gbq.read_gbq(path, **options)
+
+    def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
+        try:
+            import pandas_gbq
+        except ImportError as e:
+            raise UnsupportedBackendError("The 'pandas-gbq' library is required.") from e
+        opts = options.copy()
+        if_exists_val = opts.pop("if_exists", "fail")
+        pandas_gbq.to_gbq(df, path, if_exists=if_exists_val, **opts)
+
+
 # Initialize internal default format definitions seamlessly through side-effects
 _DEFAULTS = [
     CSVFormatHandler,
@@ -425,4 +691,12 @@ _DEFAULTS = [
     ORCFormatHandler,
     DeltaFormatHandler,
     IcebergFormatHandler,
+    PostgresFormatHandler,
+    PostgresqlFormatHandler,
+    MySQLFormatHandler,
+    DuckDBFormatHandler,
+    SQLiteFormatHandler,
+    DatabricksFormatHandler,
+    SnowflakeFormatHandler,
+    BigQueryFormatHandler,
 ]
