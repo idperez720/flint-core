@@ -105,8 +105,9 @@ class PandasDatabaseFormatHandler(PandasFormatHandler, abc.ABC):
                 raise UnsupportedBackendError("The 'pyodbc' package is required for ODBC connections.") from e
             dsn = options.get("dsn")
             if dsn:
-                rem_keys = ("url", "dsn")
-                kv_pair = [f"{k}={v}" for k, v in options.items() if k not in rem_keys]
+                exclude_keys = ("url", "dsn", "connector", "driver")
+                # Enforce alphabetical sorting to guarantee deterministic strings
+                kv_pair = [f"{k}={options[k]}" for k in sorted(options.keys()) if k not in exclude_keys]
                 return pyodbc.connect(f"DSN={dsn};" + ";".join(kv_pair))
             return pyodbc.connect(url)
 
@@ -518,19 +519,20 @@ class RelationalDBFormatHandler(PandasDatabaseFormatHandler):
         options: Dict[str, Any],
     ) -> pd.DataFrame:
         conn = self._get_connection(options)
+        connector = options.get("connector")
         opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
-        if hasattr(conn, "connect"):
-            return pd.read_sql_table(path, con=conn, **opts)
-        return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **opts)
+        # Deterministic routing based on protocol declaration, avoiding Mock traps
+        if connector in ("jdbc", "odbc"):
+            return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **opts)
+        return pd.read_sql_table(path, con=conn, **opts)
 
     def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
         conn = self._get_connection(options)
         opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
         if_exists_val = opts.pop("if_exists", "fail")
-        if hasattr(conn, "connect"):
-            df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **opts)
-        else:
-            raise UnsupportedBackendError("Bulk loading over raw connections requires SQLAlchemy.")
+        if options.get("connector") in ("jdbc", "odbc"):
+            raise UnsupportedBackendError("Bulk loading over raw JDBC/ODBC connections requires SQLAlchemy.")
+        df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **opts)
 
 
 class PostgresFormatHandler(RelationalDBFormatHandler):
@@ -577,6 +579,10 @@ class DatabricksFormatHandler(PandasDatabaseFormatHandler):
             server_hostname = opts.pop("server_hostname", None)
             http_path = opts.pop("http_path", None)
             access_token = opts.pop("access_token", None)
+
+            # Clean framework metadata leak prior to SDK invocation
+            opts.pop("connector", None)
+
             with sql.connect(
                 server_hostname=server_hostname,
                 http_path=http_path,
@@ -589,18 +595,18 @@ class DatabricksFormatHandler(PandasDatabaseFormatHandler):
 
         conn = self._get_connection(options)
         db_opts = {k: v for k, v in opts.items() if k not in ("url", "driver", "connector")}
-        if hasattr(conn, "connect"):
-            return pd.read_sql_table(path, con=conn, **db_opts)
-        return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **db_opts)
+        if connector in ("jdbc", "odbc"):
+            return pd.read_sql_query(f"SELECT * FROM {path}", con=conn, **db_opts)
+        return pd.read_sql_table(path, con=conn, **db_opts)
 
     def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:
-        conn = self._get_connection(options)
-        opts = {k: v for k, v in options.items() if k not in ("url", "driver", "connector")}
-        if_exists_val = opts.pop("if_exists", "fail")
-        if hasattr(conn, "connect"):
-            df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **opts)
-        else:
+        opts = options.copy()
+        conn = self._get_connection(opts)
+        db_opts = {k: v for k, v in opts.items() if k not in ("url", "driver", "connector")}
+        if_exists_val = db_opts.pop("if_exists", "fail")
+        if opts.get("connector") in ("jdbc", "odbc"):
             raise UnsupportedBackendError("Writing to Databricks over JDBC requires SQLAlchemy.")
+        df.to_sql(path, con=conn, if_exists=if_exists_val, index=False, **db_opts)
 
 
 class SnowflakeFormatHandler(PandasFormatHandler):
