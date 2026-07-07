@@ -15,7 +15,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Core Engines & Cloud Infrastructure
 pandas = [
     "pandas (>=3.0.3,<4.0.0)"
 ]
@@ -31,67 +30,29 @@ gcp = [
 azure = [
     "adlfs (>=2024.10.0)"
 ]
-
-# Phase 2: Open Data Lakehouse Table Formats
-delta = [
-    "deltalake (>=0.24.0)"
-]
-iceberg = [
-    "pyiceberg (>=0.8.0)"
-]
-
-# Phase 3: Relational Database Engines
-postgres = [
-    "sqlalchemy (>=2.0.25,<3.0.0)",
-    "psycopg2-binary (>=2.9.9,<3.0.0)"
-]
-mysql = [
-    "sqlalchemy (>=2.0.25,<3.0.0)"
-]
-duckdb = [
-    "sqlalchemy (>=2.0.25,<3.0.0)"
-]
-sqlite = [
-    "sqlalchemy (>=2.0.25,<3.0.0)"
-]
-
-# Phase 3: Generic Network Protocols Drivers
-jdbc = [
-    "jaydebeapi (>=1.1.1)"
-]
-odbc = [
-    "pyodbc (>=5.1.0)"
-]
-
-# Phase 3: Enterprise Cloud Data Warehouses
-databricks = [
-    "databricks-sql-connector (>=3.6.0)",
-    "sqlalchemy (>=2.0.25,<3.0.0)"
-]
-snowflake = [
-    "snowflake-connector-python (>=3.7.1)"
-]
-bigquery = [
-    "pandas-gbq (>=0.22.0)"
-]
-
-# Complete Monolithic Analytical Stack Bundle
 all = [
     "pandas (>=3.0.3,<4.0.0)",
     "pyspark (>=4.1.2,<5.0.0)",
     "s3fs (>=2024.10.0)",
     "gcsfs (>=2024.10.0)",
     "adlfs (>=2024.10.0)",
-    "deltalake (>=0.24.0)",
-    "pyiceberg (>=0.8.0)",
-    "sqlalchemy (>=2.0.25,<3.0.0)",
-    "psycopg2-binary (>=2.9.9,<3.0.0)",
-    "jaydebeapi (>=1.1.1)",
-    "pyodbc (>=5.1.0)",
-    "databricks-sql-connector (>=3.6.0)",
-    "snowflake-connector-python (>=3.7.1)",
-    "pandas-gbq (>=0.22.0)"
+    "deltalake (>=1.6.1,<2.0.0)",
+    "pyiceberg (>=0.11.1,<0.12.0)",
+    "sqlalchemy (>=2.0.51,<3.0.0)",
+    "psycopg2-binary (>=2.9.12,<3.0.0)",
+    "jaydebeapi (>=1.2.3,<2.0.0)",
+    "pyodbc (>=5.3.0,<6.0.0)",
 ]
+delta = ["deltalake (>=1.6.1,<2.0.0)"]
+iceberg = ["pyiceberg (>=0.11.1,<0.12.0)"]
+postgres = ["sqlalchemy (>=2.0.51,<3.0.0)", "psycopg2-binary (>=2.9.12,<3.0.0)"]
+mysql = ["sqlalchemy (>=2.0.51,<3.0.0)"]
+sqlite = ["sqlalchemy (>=2.0.51,<3.0.0)"]
+jdbc = ["jaydebeapi (>=1.2.3,<2.0.0)"]
+odbc = ["pyodbc (>=5.3.0,<6.0.0)"]
+databricks = ["databricks-sql-connector (>=4.3.0,<5.0.0)", "sqlalchemy (>=2.0.51,<3.0.0)"]
+snowflake = ["snowflake-connector-python (>=4.6.0,<5.0.0)"]
+bigquery = ["pandas-gbq (>=0.35.0,<0.36.0)"]
 
 [tool.poetry]
 packages = [{ include = "flint_core" }]
