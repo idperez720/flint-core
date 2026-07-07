@@ -9,6 +9,14 @@ from flint_core.core.exceptions import ProjectInitializationError
 
 logger = logging.getLogger(__name__)
 
+LAYOUT_SUBDIRS: Dict[str, List[str]] = {
+    "default": [],
+    "medallion": ["bronze", "silver", "gold"],
+    "kimball": ["staging", "dimensions", "facts"],
+    "inmon": ["staging", "corporate_edw", "data_marts"],
+    "datavault": ["raw_vault", "business_vault", "info_marts"],
+}
+
 
 class ScaffoldContext:
     """High-performance container tracking pipeline execution parameters."""
@@ -63,11 +71,27 @@ class DirectoryStructureStep:
         return "Directory Structure Layout Scaffolding"
 
     def execute(self, context: ScaffoldContext) -> None:
+        pattern = context.metadata.get("pattern", "default")
+        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
+        domains = context.metadata.get("domains", [])
+
         target_folders = [
-            context.root_path / "conf" / "catalog",
             context.root_path / "src" / "notebooks",
             context.root_path / "data",
+            context.root_path / "conf" / "catalog",
         ]
+
+        for env in envs:
+            target_folders.append(context.root_path / "conf" / "envs" / env)
+
+        if pattern in ("datamart", "datamesh"):
+            for domain in domains:
+                target_folders.append(context.root_path / "conf" / "catalog" / domain)
+        else:
+            subdirs = LAYOUT_SUBDIRS.get(pattern, [])
+            for subdir in subdirs:
+                target_folders.append(context.root_path / "conf" / "catalog" / subdir)
+
         for folder in target_folders:
             parts_to_create = []
             current = folder
@@ -99,7 +123,7 @@ class PyProjectTomlStep:
     def execute(self, context: ScaffoldContext) -> None:
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.exists():
-            raise FileExistsError("A configuration manifest file already exists at target location.")
+            raise FileExistsError("A configuration manifest file already exists at target path.")
         toml_content = textwrap.dedent(f"""\
             [project]
             name = "{context.name}"
@@ -155,9 +179,16 @@ class SampleCatalogStep:
     def name(self) -> str:
         return "Seed Declarative Catalog Configuration Generation"
 
+    def _write_file(self, path: Path, content: str, context: ScaffoldContext) -> None:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write(textwrap.dedent(content))
+        context.created_paths.append(path)
+
     def execute(self, context: ScaffoldContext) -> None:
-        catalog_path = context.root_path / "conf" / "catalog" / "sample_dataset.yaml"
-        sample_catalog_content = textwrap.dedent("""\
+        pattern = context.metadata.get("pattern", "default")
+        domains = context.metadata.get("domains", [])
+
+        generic_content = """\
             sample_table:
               description: 'Boilerplate example dataset created by flint'
               format: 'csv'
@@ -168,15 +199,47 @@ class SampleCatalogStep:
                   type: 'integer'
                 - name: 'name'
                   type: 'string'
-        """)
-        with open(catalog_path, "w", encoding="utf-8") as file:
-            file.write(sample_catalog_content)
-        context.created_paths.append(catalog_path)
+        """
+
+        if pattern == "default":
+            path = context.root_path / "conf" / "catalog" / "datasets.yaml"
+            self._write_file(path, generic_content, context)
+        elif pattern in ("datamart", "datamesh"):
+            contract_content = """\
+                # Domain specific data contract layout parameters
+                domain_dataset:
+                  description: 'Domain template dataset framework reference'
+                  format: 'parquet'
+                  engine: 'pandas'
+                  storage_path: 'data/domain_data.parquet'
+            """
+            for domain in domains:
+                path = context.root_path / "conf" / "catalog" / domain / "sample_contracts.yaml"
+                self._write_file(path, contract_content, context)
+        else:
+            subdirs = LAYOUT_SUBDIRS.get(pattern, [])
+            for subdir in subdirs:
+                path = context.root_path / "conf" / "catalog" / subdir / "sample_dataset.yaml"
+                self._write_file(path, generic_content, context)
 
     def rollback(self, context: ScaffoldContext) -> None:
-        catalog_path = context.root_path / "conf" / "catalog" / "sample_dataset.yaml"
-        if catalog_path.is_file() and catalog_path.exists():
-            catalog_path.unlink()
+        pattern = context.metadata.get("pattern", "default")
+        domains = context.metadata.get("domains", [])
+
+        paths_to_delete = []
+        if pattern == "default":
+            paths_to_delete.append(context.root_path / "conf" / "catalog" / "datasets.yaml")
+        elif pattern in ("datamart", "datamesh"):
+            for domain in domains:
+                paths_to_delete.append(context.root_path / "conf" / "catalog" / domain / "sample_contracts.yaml")
+        else:
+            subdirs = LAYOUT_SUBDIRS.get(pattern, [])
+            for subdir in subdirs:
+                paths_to_delete.append(context.root_path / "conf" / "catalog" / subdir / "sample_dataset.yaml")
+
+        for path in paths_to_delete:
+            if path.is_file() and path.exists():
+                path.unlink()
 
 
 class SampleSparkConfigStep:
@@ -195,13 +258,6 @@ class SampleSparkConfigStep:
             spark.sql.shuffle.partitions: "2"
             spark.default.parallelism: "2"
             spark.sql.execution.arrow.pyspark.enabled: "true"
-
-            # --- Cloud Storage Connectors (JAR Packages Download Coordination) ---
-            # Uncomment the packages based on your cloud data infrastructure:
-            # AWS S3 Connector (Replace version matching your Spark distribution):
-            # spark.jars.packages: "org.apache.hadoop:hadoop-aws:3.3.4"
-            # Google Cloud Storage (GCS) Connector:
-            # spark.jars.packages: "com.google.cloud.bigdataoss:gcs-connector:hadoop3-2.2.6"
         """)
         with open(spark_path, "w", encoding="utf-8") as file:
             file.write(spark_content)
@@ -213,6 +269,50 @@ class SampleSparkConfigStep:
             spark_path.unlink()
 
 
+class IsolatedEnvironmentTemplatesStep:
+    """Generates isolated environment configuration templates automatically."""
+
+    __slots__ = ()
+
+    @property
+    def name(self) -> str:
+        return "Isolated Environment Sandbox Configuration Generation"
+
+    def execute(self, context: ScaffoldContext) -> None:
+        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
+        for env in envs:
+            var_path = context.root_path / "conf" / "envs" / env / "variables.yml"
+            spark_path = context.root_path / "conf" / "envs" / env / "spark.yml"
+
+            var_content = textwrap.dedent(f"""\
+                # Isolated variables environment configurations for: {env}
+                environment_tier: "{env}"
+                datalake_bucket: "my-flint-datalake-sandbox-{env}"
+            """)
+            spark_content = textwrap.dedent(f"""\
+                # Dynamic context runtime session overrides for tier: {env}
+                spark.sql.shuffle.partitions: "4"
+            """)
+
+            with open(var_path, "w", encoding="utf-8") as f:
+                f.write(var_content)
+            context.created_paths.append(var_path)
+
+            with open(spark_path, "w", encoding="utf-8") as f:
+                f.write(spark_content)
+            context.created_paths.append(spark_path)
+
+    def rollback(self, context: ScaffoldContext) -> None:
+        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
+        for env in envs:
+            var_path = context.root_path / "conf" / "envs" / env / "variables.yml"
+            spark_path = context.root_path / "conf" / "envs" / env / "spark.yml"
+            if var_path.is_file() and var_path.exists():
+                var_path.unlink()
+            if spark_path.is_file() and spark_path.exists():
+                spark_path.unlink()
+
+
 class ProjectInitializer:
     """Orchestrates modular pipeline stages under rigid transaction blocks."""
 
@@ -222,6 +322,7 @@ class ProjectInitializer:
         SampleDataStep(),
         SampleCatalogStep(),
         SampleSparkConfigStep(),
+        IsolatedEnvironmentTemplatesStep(),
     ]
 
     def __init__(self, base_path: Union[str, Path]) -> None:
@@ -233,7 +334,30 @@ class ProjectInitializer:
             raise TypeError("Step matches invalid protocol specifications.")
         cls._pipeline.append(step)
 
-    def init_project(self, name: str, version: str, description: str, author: str) -> None:
+    def init_project(
+        self,
+        name: str,
+        version: str,
+        description: str,
+        author: str,
+        envs: Optional[List[str]] = None,
+        pattern: Optional[str] = None,
+        domains: Optional[List[str]] = None,
+    ) -> None:
+        """Initialize the target workspace structures transactionally.
+
+        Args:
+            name: Explicit name designation of the data platform workspace.
+            version: Target initial configuration semantic version string.
+            description: Concise purpose statement tracking the platform.
+            author: Identity alias marking structural system ownership.
+            envs: Optional list of isolated operational runtime environments.
+            pattern: Targeted architectural data layout framework pattern.
+            domains: Dedicated operational business domain areas for mesh.
+
+        Raises:
+            ProjectInitializationError: When any core stage execution crashes.
+        """
         context = ScaffoldContext(
             root_path=self.base_path,
             name=name,
@@ -241,6 +365,10 @@ class ProjectInitializer:
             description=description,
             author=author,
         )
+        context.metadata["envs"] = envs if envs else ["dev", "qa", "prod"]
+        context.metadata["pattern"] = pattern if pattern else "default"
+        context.metadata["domains"] = domains if domains else []
+
         completed_stages: List[ScaffoldStep] = []
         for step in self._pipeline:
             try:
