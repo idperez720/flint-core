@@ -29,3 +29,15 @@ class ProjectInitializationError(FlintError):
     """Raised when the project scaffolding pipeline encounters a failure."""
 
     pass
+
+
+class PipelineExecutionError(FlintError):
+    """Raised when a functional node encounters a runtime processing crash."""
+
+    pass
+
+
+class CircularDependencyError(FlintError):
+    """Raised when pipeline topological resolution detects cyclic references."""
+
+    pass
