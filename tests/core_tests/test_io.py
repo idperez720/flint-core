@@ -11,7 +11,11 @@ import pytest
 import yaml
 
 from flint_core.core.catalog import DataCatalog
-from flint_core.core.exceptions import UnsupportedBackendError
+from flint_core.core.exceptions import (
+    CatalogParseError,
+    ColumnValidationError,
+    UnsupportedBackendError,
+)
 from flint_core.core.io import DataLoader, DataSaver
 
 
@@ -78,7 +82,7 @@ def mock_advanced_io_environment(
         "pandas_cloud_azure": {
             "engine": "pandas",
             "format": "parquet",
-            "storage_path": "abfss://container@storage.dfs.core.windows.net/file.pq",
+            "storage_path": ("abfss://container@storage.dfs.core.windows.net/file.pq"),
         },
         "spark_cloud_dataset": {
             "engine": "spark",
@@ -155,7 +159,8 @@ def test_pandas_data_saver_collision_error(
 ) -> None:
     """Asserts that save mode='error' raises on pre-existing paths."""
     pd = pytest.importorskip("pandas")
-    test_df = pd.DataFrame({"id": [1]})
+    # Satisfy structural contract validation by providing all columns
+    test_df = pd.DataFrame({"id": [1], "price": [99.99]})
 
     saver = DataSaver(catalog=mock_advanced_io_environment)
     with pytest.raises(FileExistsError):
@@ -167,7 +172,8 @@ def test_pandas_data_saver_mode_ignore(
 ) -> None:
     """Asserts that save mode='ignore' skips write execution silently."""
     pd = pytest.importorskip("pandas")
-    test_df = pd.DataFrame({"id": [999]})
+    # Satisfy structural contract validation by providing all columns
+    test_df = pd.DataFrame({"id": [999], "price": [150.50]})
 
     saver = DataSaver(catalog=mock_advanced_io_environment)
 
@@ -202,7 +208,7 @@ def test_pandas_saver_cloud_s3_path_bypass(
 def test_pandas_saver_cloud_azure_path_bypass(
     mock_advanced_io_environment: DataCatalog,
 ) -> None:
-    """Asserts that saving to an Azure ABFSS URI bypasses local path validation."""
+    """Asserts that saving to an Azure ABFSS URI bypasses local validation."""
     pd = pytest.importorskip("pandas")
     dummy_df = pd.DataFrame({"id": [1]})
 
@@ -224,16 +230,17 @@ def test_spark_engine_infrastructure_injection(mock_advanced_io_environment: Dat
         except Exception:
             pass
 
-        # Already had spark.hadoop prefix, should be intact
-        assert (
-            spark_session.conf.get("spark.hadoop.fs.gs.impl") == "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem"
-        )
-        # Missing prefix, should have been injected automatically by framework
-        assert spark_session.conf.get("spark.hadoop.fs.azure.account.key.dummy") == "secret-token"
+        gs_impl = spark_session.conf.get("spark.hadoop.fs.gs.impl")
+        assert gs_impl == ("com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
+
+        az_key = spark_session.conf.get("spark.hadoop.fs.azure.account.key.dummy")
+        assert az_key == "secret-token"
 
 
-def test_pandas_engine_cloud_infrastructure_injection(tmp_path: Path) -> None:
-    """Asserts that infrastructure definitions map directly to fsspec storage options."""
+def test_pandas_engine_cloud_infrastructure_injection(
+    tmp_path: Path,
+) -> None:
+    """Asserts that infrastructure definitions map directly to storage options."""
     pd = pytest.importorskip("pandas")
     catalog_dir = tmp_path / "conf" / "catalog"
     catalog_dir.mkdir(parents=True, exist_ok=True)
@@ -265,9 +272,56 @@ def test_pandas_engine_cloud_infrastructure_injection(tmp_path: Path) -> None:
         except Exception:
             pass
 
-        # Verify that storage_options were implicitly channeled down to fsspec
         mock_parquet_reader.assert_called_once()
         kwargs = mock_parquet_reader.call_args[1]
         assert "storage_options" in kwargs
         assert kwargs["storage_options"]["key"] == "aws-access-key-id"
         assert kwargs["storage_options"]["secret"] == "aws-secret-access-key"
+
+
+def test_data_saver_missing_columns_raises_validation_error(
+    mock_advanced_io_environment: DataCatalog,
+) -> None:
+    """Asserts that saving data missing catalog columns raises an exception."""
+    pd = pytest.importorskip("pandas")
+    invalid_df = pd.DataFrame({"id": [1]})
+
+    saver = DataSaver(catalog=mock_advanced_io_environment)
+    with pytest.raises(ColumnValidationError) as exc_info:
+        saver.save(invalid_df, "pandas_strict_save", mode="overwrite")
+
+    assert "Missing expected catalog columns" in str(exc_info.value)
+
+
+def test_catalog_models_structural_validation_raises_parse_error() -> None:
+    """Asserts that invalid model initializations raise CatalogParseError."""
+    from flint_core.core.catalog.models import (
+        ColumnDefinition,
+        DatasetConfiguration,
+    )
+
+    with pytest.raises(CatalogParseError) as col_exc:
+        ColumnDefinition(name="")
+    assert "name' must be a non-empty string" in str(col_exc.value)
+
+    with pytest.raises(CatalogParseError) as ds_exc:
+        DatasetConfiguration(
+            name="corrupt_ds",
+            engine="",
+            data_format="parquet",
+            storage_path="data/test.parquet",
+            columns=[],
+            metadata={},
+        )
+    assert "engine' must be a non-empty string" in str(ds_exc.value)
+
+    with pytest.raises(CatalogParseError) as list_exc:
+        DatasetConfiguration(
+            name="corrupt_ds",
+            engine="pandas",
+            data_format="parquet",
+            storage_path="data/test.parquet",
+            columns="not_a_list",  # type: ignore
+            metadata={},
+        )
+    assert "columns' must be a valid list" in str(list_exc.value)

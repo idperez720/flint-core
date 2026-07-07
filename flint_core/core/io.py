@@ -67,10 +67,10 @@ class DataLoader:
         """Triggers declarative catalog dataset ingestion parsing requirements.
 
         Args:
-            dataset_name: Core metadata token catalog identifier lookup key.
-            spark: Optional active distributed SparkSession engine manager context.
-            options: Runtime dictionary configuration reading overrides mapping.
-            version: Target version numerical snapshot tracker for time travel.
+            dataset_name: Core metadata token catalog identifier key.
+            spark: Optional active distributed SparkSession engine manager.
+            options: Runtime dictionary configuration reading overrides.
+            version: Target version snapshot tracker for time travel.
             as_of: Chronological timestamp target snapshot constraint.
 
         Returns:
@@ -138,6 +138,10 @@ class DataSaver:
             options: Runtime dictionary configuration writing overrides mapping.
         """
         dataset = self.catalog.get_dataset(dataset_name)
+
+        # CRITICAL VALIDATION ENFORCEMENT: Guard schema contract boundaries
+        dataset.validate_schema(df)
+
         resolved_path = _resolve_path(dataset.storage_path, self.catalog.project_root)
 
         raw_catalog_opts = dataset.metadata.get("options", {})

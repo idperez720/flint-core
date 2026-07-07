@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Set, Union
 
 from flint_core.core.catalog.adapters import AdapterRegistry
-from flint_core.core.exceptions import ColumnValidationError
+from flint_core.core.exceptions import CatalogParseError, ColumnValidationError
 
 
 class ColumnDefinition:
@@ -30,6 +30,8 @@ class ColumnDefinition:
         timezone: Optional[str] = None,
     ) -> None:
         """Initializes a new declarative ColumnDefinition metadata entity."""
+        if not name or not isinstance(name, str):
+            raise CatalogParseError("Column validation failed: 'name' must be a non-empty string.")
         self.name: str = name
         self.data_type: Optional[str] = data_type
         self.description: Optional[str] = description
@@ -68,6 +70,19 @@ class DatasetConfiguration:
         catalog_ref: Optional[Any] = None,
     ) -> None:
         """Initializes a memory-isolated DatasetConfiguration data model."""
+        if not name or not isinstance(name, str):
+            raise CatalogParseError("Dataset validation failed: 'name' must be a non-empty string.")
+        if not engine or not isinstance(engine, str):
+            raise CatalogParseError(f"Dataset '{name}' validation failed: 'engine' must be a non-empty string.")
+        if not data_format or not isinstance(data_format, str):
+            raise CatalogParseError(f"Dataset '{name}' validation failed: 'format' must be a non-empty string.")
+        if not storage_path or not isinstance(storage_path, str):
+            raise CatalogParseError(f"Dataset '{name}' validation failed: 'storage_path' must be a non-empty string.")
+        if not isinstance(columns, list):
+            raise CatalogParseError(
+                f"Dataset '{name}' validation failed: 'columns' must be a valid list specification."
+            )
+
         self.name: str = name
         self.engine: str = engine
         self.format: str = data_format
