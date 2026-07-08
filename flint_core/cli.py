@@ -121,6 +121,12 @@ def entry_point() -> None:
     help="Target structural architecture layout paradigm index selection (1-7).",
 )
 @click.option(
+    "--manager",
+    "-m",
+    type=click.Choice(["venv", "uv", "poetry"]),
+    help="Target python environment package manager tool selection.",
+)
+@click.option(
     "--no-input",
     is_flag=True,
     default=False,
@@ -134,6 +140,7 @@ def init(
     author: Optional[str],
     envs: Optional[str],
     pattern: Optional[str],
+    manager: Optional[str],
     no_input: bool,
 ) -> None:
     """Scaffold a new production-ready data engineering project layout transactionally.
@@ -148,19 +155,27 @@ def init(
     )
 
     resolved_path = Path(path).resolve()
-    default_name = resolved_path.name if resolved_path.name not in (".", "") else "my-flint-project"
+    if resolved_path.name not in (".", ""):
+        default_name = resolved_path.name
+    else:
+        default_name = "my-flint-project"
 
     if no_input:
         final_name = name if name else default_name
         final_version = version if version else "0.1.0"
-        final_description = description if description else "Data engineering project scaffolded by flint"
+        if description:
+            final_description = description
+        else:
+            final_description = "Data engineering project scaffolded by flint"
         final_author = author if author else "Anonymous"
         final_envs_str = envs if envs else "dev,qa,prod"
         final_pattern_choice = pattern if pattern else "1"
         final_pattern = PATTERN_MAP[final_pattern_choice]
-        final_domains_str = (
-            "core_operations,intelligence_reporting" if final_pattern in ("datamart", "datamesh") else ""
-        )
+        if final_pattern in ("datamart", "datamesh"):
+            final_domains_str = "core_operations,intelligence_reporting"
+        else:
+            final_domains_str = ""
+        final_manager = manager if manager else "venv"
     else:
         final_name = (
             name
@@ -236,6 +251,19 @@ def init(
         else:
             final_domains_str = ""
 
+        if not manager:
+            click.echo("\nSelect a python environment package manager:")
+            click.echo("  venv    (Standard Python venv with requirements.txt)")
+            click.echo("  uv      (High-performance uv workspace setup)")
+            click.echo("  poetry  (Traditional Poetry isolated environment setup)\n")
+            final_manager = click.prompt(
+                click.style("? Package manager", fg="green", bold=True),
+                type=click.Choice(["venv", "uv", "poetry"]),
+                default="venv",
+            )
+        else:
+            final_manager = manager
+
     parsed_envs = [e.strip().lower() for e in final_envs_str.split(",") if e.strip()]
     parsed_domains = [d.strip().lower() for d in final_domains_str.split(",") if d.strip()]
 
@@ -249,6 +277,7 @@ def init(
             envs=parsed_envs,
             pattern=final_pattern,
             domains=parsed_domains,
+            manager=final_manager,
         )
         click.secho(
             f"\n✨ Project successfully initialized at '{resolved_path}'!",

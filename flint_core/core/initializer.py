@@ -1,9 +1,13 @@
 """This module implements transactional project scaffolding engines for flint."""
 
+import importlib.metadata
 import logging
+import shutil
+import subprocess
+import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable
+from typing import Callable, Dict, List, Optional, Protocol, Type, Union, runtime_checkable
 
 from flint_core.core.exceptions import ProjectInitializationError
 
@@ -38,14 +42,24 @@ class ScaffoldContext:
         version: str,
         description: str,
         author: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, object]] = None,
     ) -> None:
+        """Initializes the context container tracking scaffolding workflow state.
+
+        Args:
+            root_path: Target root folder location for project layout.
+            name: Explicit identity designation of the data platform workspace.
+            version: Target initial configuration semantic version string.
+            description: Statement describing pipeline repository targets.
+            author: Identity token alias marking system owners fields.
+            metadata: Custom storage layer supporting extensible context fields.
+        """
         self.root_path: Path = root_path.resolve()
         self.name: str = name
         self.version: str = version
         self.description: str = description
         self.author: str = author
-        self.metadata: Dict[str, Any] = metadata if metadata is not None else {}
+        self.metadata: Dict[str, object] = metadata if metadata is not None else {}
         self.created_paths: List[Path] = []
 
 
@@ -54,11 +68,194 @@ class ScaffoldStep(Protocol):
     """Structural protocol governing atomic project initialization stages."""
 
     @property
-    def name(self) -> str: ...
+    def name(self) -> str:
+        """The distinct identifying designation tracking execution steps."""
+        ...
 
-    def execute(self, context: ScaffoldContext) -> None: ...
+    def execute(self, context: ScaffoldContext) -> None:
+        """Executes the specific atomic scaffolding generation logic."""
+        ...
 
-    def rollback(self, context: ScaffoldContext) -> None: ...
+    def rollback(self, context: ScaffoldContext) -> None:
+        """Reverts physical changes if downstream boundaries crash."""
+        ...
+
+
+@runtime_checkable
+class EnvironmentStrategy(Protocol):
+    """Structural protocol governing dynamic runtime environment creation."""
+
+    def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
+        """Writes configuration manifests matching the package manager type."""
+        ...
+
+    def create_environment(self, context: ScaffoldContext) -> None:
+        """Executes the command routines to allocate a virtual environment."""
+        ...
+
+
+class EnvironmentRegistry:
+    """Central lookup map routing environment strategy resolutions dynamically."""
+
+    _registry: Dict[str, Type[EnvironmentStrategy]] = {}
+
+    @classmethod
+    def register(cls, name: str) -> Callable[[Type[EnvironmentStrategy]], Type[EnvironmentStrategy]]:
+        """Decorator to map package management strategies safely to the registry."""
+
+        def decorator(
+            strategy_cls: Type[EnvironmentStrategy],
+        ) -> Type[EnvironmentStrategy]:
+            cls._registry[name.lower()] = strategy_cls
+            return strategy_cls
+
+        return decorator
+
+    @classmethod
+    def resolve(cls, name: str) -> EnvironmentStrategy:
+        """Resolves target strategies or throws clean configuration errors."""
+        strategy_cls = cls._registry.get(name.lower())
+        if not strategy_cls:
+            supported = ", ".join(cls._registry.keys())
+            raise ValueError(f"Unsupported environment manager '{name}'. Supported: {supported}")
+        return strategy_cls()
+
+
+@EnvironmentRegistry.register("uv")
+class UvEnvironmentStrategy:
+    """Handles high-performance PEP 621 configurations and environments via uv."""
+
+    def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
+        """Writes standard pyproject.toml and requirements.txt for uv."""
+        toml_path = context.root_path / "pyproject.toml"
+        if toml_path.exists():
+            raise FileExistsError("A configuration manifest file already exists.")
+
+        toml_content = textwrap.dedent(f"""\
+            [project]
+            name = "{context.name}"
+            version = "{context.version}"
+            description = "{context.description}"
+            authors = [
+                {{name = "{context.author}"}}
+            ]
+            requires-python = ">=3.11,<4.0.0"
+            dependencies = [
+                "flint-core>={version_str}",
+            ]
+        """)
+        with open(toml_path, "w", encoding="utf-8") as file:
+            file.write(toml_content)
+
+        req_path = context.root_path / "requirements.txt"
+        with open(req_path, "w", encoding="utf-8") as file:
+            file.write(f"flint-core>={version_str}\n")
+
+    def create_environment(self, context: ScaffoldContext) -> None:
+        """Executes explicit virtual workspace instantiation via uv commands."""
+        try:
+            subprocess.run(
+                ["uv", "venv", ".venv"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError) as err:
+            raise RuntimeError(
+                "Failed to allocate virtual environment via 'uv'. Verify the 'uv' binary is available on system PATH."
+            ) from err
+
+
+@EnvironmentRegistry.register("poetry")
+class PoetryEnvironmentStrategy:
+    """Handles modern deployment setups governed by poetry standards layouts."""
+
+    def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
+        """Writes native traditional Poetry project metadata setups."""
+        toml_path = context.root_path / "pyproject.toml"
+        if toml_path.exists():
+            raise FileExistsError("A configuration manifest file already exists.")
+
+        content = textwrap.dedent(f"""\
+            [tool.poetry]
+            name = "{context.name}"
+            version = "{context.version}"
+            description = "{context.description}"
+            authors = ["{context.author}"]
+
+            [tool.poetry.dependencies]
+            python = ">=3.11,<4.0.0"
+            flint-core = "^{version_str}"
+
+            [build-system]
+            requires = ["poetry-core"]
+            build-backend = "poetry.core.masonry.api"
+        """)
+        with open(toml_path, "w", encoding="utf-8") as file:
+            file.write(content)
+
+    def create_environment(self, context: ScaffoldContext) -> None:
+        """Configures in-project sandboxes and triggers poetry environments."""
+        try:
+            subprocess.run(
+                ["poetry", "config", "virtualenvs.in-project", "true"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["poetry", "env", "use", "python3"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError) as err:
+            raise RuntimeError(
+                "Failed to allocate virtual environment via 'poetry'. "
+                "Verify the 'poetry' binary is available on system PATH."
+            ) from err
+
+
+@EnvironmentRegistry.register("venv")
+@EnvironmentRegistry.register("pip")
+class VenvEnvironmentStrategy:
+    """Fallback strategy allocating vanilla system virtual environments."""
+
+    def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
+        """Writes standard pyproject.toml and requirements.txt for pip/venv."""
+        toml_path = context.root_path / "pyproject.toml"
+        if toml_path.exists():
+            raise FileExistsError("A configuration manifest file already exists.")
+
+        toml_content = textwrap.dedent(f"""\
+            [project]
+            name = "{context.name}"
+            version = "{context.version}"
+            description = "{context.description}"
+            authors = [
+                {{name = "{context.author}"}}
+            ]
+            requires-python = ">=3.11,<4.0.0"
+        """)
+        with open(toml_path, "w", encoding="utf-8") as file:
+            file.write(toml_content)
+
+        req_path = context.root_path / "requirements.txt"
+        with open(req_path, "w", encoding="utf-8") as file:
+            file.write(f"flint-core>={version_str}\n")
+
+    def create_environment(self, context: ScaffoldContext) -> None:
+        """Triggers local python standard library venv sub-process creation."""
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "venv", ".venv"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.SubprocessError as err:
+            raise RuntimeError("Failed to instantiate python standard library venv.") from err
 
 
 class DirectoryStructureStep:
@@ -68,12 +265,19 @@ class DirectoryStructureStep:
 
     @property
     def name(self) -> str:
+        """Returns the structural descriptor matching layout components."""
         return "Directory Structure Layout Scaffolding"
 
     def execute(self, context: ScaffoldContext) -> None:
-        pattern = context.metadata.get("pattern", "default")
-        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
-        domains = context.metadata.get("domains", [])
+        """Allocates targeted folder configurations tracking choice patterns."""
+        pattern = str(context.metadata.get("pattern", "default"))
+        envs = context.metadata.get("envs")
+        if not isinstance(envs, list):
+            envs = ["dev", "qa", "prod"]
+
+        domains = context.metadata.get("domains")
+        if not isinstance(domains, list):
+            domains = []
 
         target_folders = [
             context.root_path / "src" / "notebooks",
@@ -82,11 +286,11 @@ class DirectoryStructureStep:
         ]
 
         for env in envs:
-            target_folders.append(context.root_path / "conf" / "envs" / env)
+            target_folders.append(context.root_path / "conf" / "envs" / str(env))
 
         if pattern in ("datamart", "datamesh"):
             for domain in domains:
-                target_folders.append(context.root_path / "conf" / "catalog" / domain)
+                target_folders.append(context.root_path / "conf" / "catalog" / str(domain))
         else:
             subdirs = LAYOUT_SUBDIRS.get(pattern, [])
             for subdir in subdirs:
@@ -106,42 +310,63 @@ class DirectoryStructureStep:
                 context.created_paths.append(part)
 
     def rollback(self, context: ScaffoldContext) -> None:
+        """Removes allocated structural paths from target contexts."""
         for item in reversed(context.created_paths):
             if item.is_dir() and item.exists() and not any(item.iterdir()):
                 item.rmdir()
 
 
-class PyProjectTomlStep:
-    """Core stage orchestrating safe generation of project environment anchors."""
+class WorkspaceEnvironmentStep:
+    """Orchestrates configuration manifests and virtual environment setups."""
 
     __slots__ = ()
 
     @property
     def name(self) -> str:
-        return "Root Configuration Manifest Generation"
+        """Returns the naming descriptor tag marking manifest and env setup rules."""
+        return "Workspace Isolation and Environment Configuration Setup"
 
     def execute(self, context: ScaffoldContext) -> None:
+        """Generates manifests and builds isolated environments via active registry."""
+        try:
+            version_str = importlib.metadata.version("flint-core")
+        except importlib.metadata.PackageNotFoundError:
+            version_str = "0.1.0"
+
+        manager_name = str(context.metadata.get("manager", "venv"))
+        try:
+            strategy = EnvironmentRegistry.resolve(manager_name)
+        except ValueError as err:
+            raise ProjectInitializationError(str(err)) from err
+
+        strategy.write_manifests(context, version_str)
+
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.exists():
-            raise FileExistsError("A configuration manifest file already exists at target path.")
-        toml_content = textwrap.dedent(f"""\
-            [project]
-            name = "{context.name}"
-            version = "{context.version}"
-            description = "{context.description}"
-            authors = [
-                {{name = "{context.author}"}}
-            ]
-            requires-python = ">=3.11,<4.0.0"
-        """)
-        with open(toml_path, "w", encoding="utf-8") as file:
-            file.write(toml_content)
-        context.created_paths.append(toml_path)
+            context.created_paths.append(toml_path)
+
+        req_path = context.root_path / "requirements.txt"
+        if req_path.exists():
+            context.created_paths.append(req_path)
+
+        strategy.create_environment(context)
+        venv_path = context.root_path / ".venv"
+        if venv_path.exists():
+            context.created_paths.append(venv_path)
 
     def rollback(self, context: ScaffoldContext) -> None:
+        """Retroactively unlinks manifests and cleans up environments."""
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.is_file() and toml_path.exists():
             toml_path.unlink()
+
+        req_path = context.root_path / "requirements.txt"
+        if req_path.is_file() and req_path.exists():
+            req_path.unlink()
+
+        venv_path = context.root_path / ".venv"
+        if venv_path.is_dir() and venv_path.exists():
+            shutil.rmtree(venv_path, ignore_errors=True)
 
 
 class SampleDataStep:
@@ -151,9 +376,11 @@ class SampleDataStep:
 
     @property
     def name(self) -> str:
+        """Returns the identifier tracking data."""
         return "Boilerplate Seed Sample Physical Data Insertion"
 
     def execute(self, context: ScaffoldContext) -> None:
+        """Writes transactional baseline mock tracking metrics profiles."""
         csv_path = context.root_path / "data" / "sample_table.csv"
         csv_content = textwrap.dedent("""\
             id,name
@@ -165,6 +392,7 @@ class SampleDataStep:
         context.created_paths.append(csv_path)
 
     def rollback(self, context: ScaffoldContext) -> None:
+        """Unlinks physical file elements allocated on baseline storage."""
         csv_path = context.root_path / "data" / "sample_table.csv"
         if csv_path.is_file() and csv_path.exists():
             csv_path.unlink()
@@ -177,6 +405,7 @@ class SampleCatalogStep:
 
     @property
     def name(self) -> str:
+        """Returns the semantic identification string token tag."""
         return "Seed Declarative Catalog Configuration Generation"
 
     def _write_file(self, path: Path, content: str, context: ScaffoldContext) -> None:
@@ -185,8 +414,11 @@ class SampleCatalogStep:
         context.created_paths.append(path)
 
     def execute(self, context: ScaffoldContext) -> None:
-        pattern = context.metadata.get("pattern", "default")
-        domains = context.metadata.get("domains", [])
+        """Compiles modular metadata declarations utilizing conventions."""
+        pattern = str(context.metadata.get("pattern", "default"))
+        domains = context.metadata.get("domains")
+        if not isinstance(domains, list):
+            domains = []
 
         generic_content = """\
             sample_table:
@@ -214,7 +446,7 @@ class SampleCatalogStep:
                   storage_path: 'data/domain_data.parquet'
             """
             for domain in domains:
-                path = context.root_path / "conf" / "catalog" / domain / "sample_contracts.yaml"
+                path = context.root_path / "conf" / "catalog" / str(domain) / "sample_contracts.yaml"
                 self._write_file(path, contract_content, context)
         else:
             subdirs = LAYOUT_SUBDIRS.get(pattern, [])
@@ -223,15 +455,18 @@ class SampleCatalogStep:
                 self._write_file(path, generic_content, context)
 
     def rollback(self, context: ScaffoldContext) -> None:
-        pattern = context.metadata.get("pattern", "default")
-        domains = context.metadata.get("domains", [])
+        """Flushes generated catalog files safely during cleanup maneuvers."""
+        pattern = str(context.metadata.get("pattern", "default"))
+        domains = context.metadata.get("domains")
+        if not isinstance(domains, list):
+            domains = []
 
         paths_to_delete = []
         if pattern == "default":
             paths_to_delete.append(context.root_path / "conf" / "catalog" / "datasets.yaml")
         elif pattern in ("datamart", "datamesh"):
             for domain in domains:
-                paths_to_delete.append(context.root_path / "conf" / "catalog" / domain / "sample_contracts.yaml")
+                paths_to_delete.append(context.root_path / "conf" / "catalog" / str(domain) / "sample_contracts.yaml")
         else:
             subdirs = LAYOUT_SUBDIRS.get(pattern, [])
             for subdir in subdirs:
@@ -249,9 +484,11 @@ class SampleSparkConfigStep:
 
     @property
     def name(self) -> str:
+        """Returns the formal categorization metadata identifier."""
         return "Seed Spark Configuration Template Generation"
 
     def execute(self, context: ScaffoldContext) -> None:
+        """Generates configuration mappings for distributed storage engines."""
         spark_path = context.root_path / "conf" / "spark.yml"
         spark_content = textwrap.dedent("""\
             # Global Spark configurations managed by convention via flint-core
@@ -264,6 +501,7 @@ class SampleSparkConfigStep:
         context.created_paths.append(spark_path)
 
     def rollback(self, context: ScaffoldContext) -> None:
+        """Removes global properties layout contexts transactionally."""
         spark_path = context.root_path / "conf" / "spark.yml"
         if spark_path.is_file() and spark_path.exists():
             spark_path.unlink()
@@ -276,13 +514,18 @@ class IsolatedEnvironmentTemplatesStep:
 
     @property
     def name(self) -> str:
+        """Returns the semantic token naming label identifying target layers."""
         return "Isolated Environment Sandbox Configuration Generation"
 
     def execute(self, context: ScaffoldContext) -> None:
-        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
+        """Builds multi-environment properties tuning maps per sandbox tier."""
+        envs = context.metadata.get("envs")
+        if not isinstance(envs, list):
+            envs = ["dev", "qa", "prod"]
+
         for env in envs:
-            var_path = context.root_path / "conf" / "envs" / env / "variables.yml"
-            spark_path = context.root_path / "conf" / "envs" / env / "spark.yml"
+            var_path = context.root_path / "conf" / "envs" / str(env) / "variables.yml"
+            spark_path = context.root_path / "conf" / "envs" / str(env) / "spark.yml"
 
             var_content = textwrap.dedent(f"""\
                 # Isolated variables environment configurations for: {env}
@@ -303,10 +546,14 @@ class IsolatedEnvironmentTemplatesStep:
             context.created_paths.append(spark_path)
 
     def rollback(self, context: ScaffoldContext) -> None:
-        envs = context.metadata.get("envs", ["dev", "qa", "prod"])
+        """Removes isolated templates across structural profiles blocks."""
+        envs = context.metadata.get("envs")
+        if not isinstance(envs, list):
+            envs = ["dev", "qa", "prod"]
+
         for env in envs:
-            var_path = context.root_path / "conf" / "envs" / env / "variables.yml"
-            spark_path = context.root_path / "conf" / "envs" / env / "spark.yml"
+            var_path = context.root_path / "conf" / "envs" / str(env) / "variables.yml"
+            spark_path = context.root_path / "conf" / "envs" / str(env) / "spark.yml"
             if var_path.is_file() and var_path.exists():
                 var_path.unlink()
             if spark_path.is_file() and spark_path.exists():
@@ -318,7 +565,7 @@ class ProjectInitializer:
 
     _pipeline: List[ScaffoldStep] = [
         DirectoryStructureStep(),
-        PyProjectTomlStep(),
+        WorkspaceEnvironmentStep(),
         SampleDataStep(),
         SampleCatalogStep(),
         SampleSparkConfigStep(),
@@ -326,10 +573,12 @@ class ProjectInitializer:
     ]
 
     def __init__(self, base_path: Union[str, Path]) -> None:
+        """Initializes the baseline orchestrator pointing to project pathways."""
         self.base_path: Path = Path(base_path).resolve()
 
     @classmethod
     def register_scaffold_step(cls, step: ScaffoldStep) -> None:
+        """Allows core workflow extensions to append processing hooks steps."""
         if not isinstance(step, ScaffoldStep):
             raise TypeError("Step matches invalid protocol specifications.")
         cls._pipeline.append(step)
@@ -343,6 +592,7 @@ class ProjectInitializer:
         envs: Optional[List[str]] = None,
         pattern: Optional[str] = None,
         domains: Optional[List[str]] = None,
+        manager: Optional[str] = None,
     ) -> None:
         """Initialize the target workspace structures transactionally.
 
@@ -354,6 +604,7 @@ class ProjectInitializer:
             envs: Optional list of isolated operational runtime environments.
             pattern: Targeted architectural data layout framework pattern.
             domains: Dedicated operational business domain areas for mesh.
+            manager: Targeted packaging framework tool strategy flag selector.
 
         Raises:
             ProjectInitializationError: When any core stage execution crashes.
@@ -368,6 +619,7 @@ class ProjectInitializer:
         context.metadata["envs"] = envs if envs else ["dev", "qa", "prod"]
         context.metadata["pattern"] = pattern if pattern else "default"
         context.metadata["domains"] = domains if domains else []
+        context.metadata["manager"] = manager if manager else "venv"
 
         completed_stages: List[ScaffoldStep] = []
         for step in self._pipeline:
@@ -379,6 +631,7 @@ class ProjectInitializer:
                 raise ProjectInitializationError(f"scaffolding transaction failed at '{step.name}': {error}") from error
 
     def _abort_and_rollback(self, completed_stages: List[ScaffoldStep], context: ScaffoldContext) -> None:
+        """Triggers retroactive cleanups across completed pipeline branches."""
         for step in reversed(completed_stages):
             try:
                 step.rollback(context)
