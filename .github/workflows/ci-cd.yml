@@ -103,4 +103,4 @@ jobs:
         run: |
           poetry run semantic-release version
           poetry build
-          poetry publish
+          poetry publish --skip-existing
