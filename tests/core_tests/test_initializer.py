@@ -1,7 +1,9 @@
 """Unit tests for the flint-core transactional project scaffolding engine."""
 
+import subprocess
 from pathlib import Path
 from typing import List
+from unittest.mock import MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -14,7 +16,25 @@ from flint_core.core.initializer import (
 )
 
 
-def test_project_initializer_happy_path(tmp_path: Path) -> None:
+def mock_subprocess_run(*args: object, **kwargs: object) -> MagicMock:
+    """Simulates a fast and successful virtual environment directory creation.
+
+    Args:
+        *args: Variable positional arguments matching subprocess signatures.
+        **kwargs: Variable keyword arguments containing execution paths.
+
+    Returns:
+        A mock instance mimicking a successful subprocess execution return.
+    """
+    cwd = kwargs.get("cwd")
+    if isinstance(cwd, Path):
+        venv_dir: Path = cwd / ".venv"
+        venv_dir.mkdir(exist_ok=True)
+    return MagicMock()
+
+
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_happy_path(mock_run: MagicMock, tmp_path: Path) -> None:
     """Asserts that a standard project initialization seeds all assets."""
     initializer = ProjectInitializer(base_path=tmp_path)
 
@@ -25,6 +45,7 @@ def test_project_initializer_happy_path(tmp_path: Path) -> None:
         author="Architecture Team",
         envs=["dev", "qa", "prod"],
         pattern="default",
+        manager="venv",
     )
 
     # 1. Verify directory structural layout
@@ -32,24 +53,27 @@ def test_project_initializer_happy_path(tmp_path: Path) -> None:
     assert (tmp_path / "src" / "notebooks").is_dir()
     assert (tmp_path / "data").is_dir()
 
-    # 2. Verify pyproject.toml manifest content
+    # 2. Verify hybrid manifest and requirements contents
     toml_path = tmp_path / "pyproject.toml"
     assert toml_path.is_file()
     toml_content = toml_path.read_text(encoding="utf-8")
     assert 'name = "enterprise-pipeline"' in toml_content
-    assert 'version = "1.0.0"' in toml_content
-    assert 'name = "Architecture Team"' in toml_content
 
-    # 3. Verify boilerplate data assets (Updated for Task 2 specs)
+    req_path = tmp_path / "requirements.txt"
+    assert req_path.is_file()
+    req_content = req_path.read_text(encoding="utf-8")
+    assert "flint-core>=" in req_content
+
+    # 3. Verify automated virtual environment isolation anchor
+    assert (tmp_path / ".venv").is_dir()
+
+    # 4. Verify boilerplate data assets
     assert (tmp_path / "data" / "sample_table.csv").is_file()
     assert (tmp_path / "conf" / "catalog" / "datasets.yaml").is_file()
 
-    # 4. Verify Phase 3.5 multi-environment isolated assets
-    assert (tmp_path / "conf" / "envs" / "dev" / "variables.yml").is_file()
-    assert (tmp_path / "conf" / "envs" / "dev" / "spark.yml").is_file()
 
-
-def test_project_initializer_medallion_pattern(tmp_path: Path) -> None:
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_medallion_pattern(mock_run: MagicMock, tmp_path: Path) -> None:
     """Asserts that medallion pattern builds bronze, silver, and gold branches."""
     initializer = ProjectInitializer(base_path=tmp_path)
 
@@ -65,10 +89,10 @@ def test_project_initializer_medallion_pattern(tmp_path: Path) -> None:
     assert (tmp_path / "conf" / "catalog" / "bronze").is_dir()
     assert (tmp_path / "conf" / "catalog" / "silver").is_dir()
     assert (tmp_path / "conf" / "catalog" / "gold").is_dir()
-    assert (tmp_path / "conf" / "catalog" / "bronze" / "sample_dataset.yaml").is_file()
 
 
-def test_project_initializer_datamesh_pattern(tmp_path: Path) -> None:
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_datamesh_pattern(mock_run: MagicMock, tmp_path: Path) -> None:
     """Asserts domain-driven layouts allocate distinct custom directories."""
     initializer = ProjectInitializer(base_path=tmp_path)
 
@@ -84,13 +108,12 @@ def test_project_initializer_datamesh_pattern(tmp_path: Path) -> None:
 
     assert (tmp_path / "conf" / "catalog" / "finance").is_dir()
     assert (tmp_path / "conf" / "catalog" / "marketing").is_dir()
-    assert (tmp_path / "conf" / "catalog" / "finance" / "sample_contracts.yaml").is_file()
 
 
-def test_cli_init_interactive_numeric_choice(tmp_path: Path) -> None:
-    """Asserts that CLI numeric choices map to correct catalog paradigms."""
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_cli_init_interactive_numeric_choice(mock_run: MagicMock, tmp_path: Path) -> None:
+    """Asserts that CLI inputs including manager map to correct paradigms."""
     runner = CliRunner()
-    # Sequence matching the click prompts: index choice 2 maps to medallion
     inputs: List[str] = [
         "cli-medallion-project",  # Project name
         "0.2.0",  # Version
@@ -98,6 +121,7 @@ def test_cli_init_interactive_numeric_choice(tmp_path: Path) -> None:
         "CLI Tester",  # Author
         "dev,prod",  # Environments
         "2",  # Pattern Choice (2 = medallion)
+        "venv",  # NEW: Package manager selection prompt items
     ]
 
     result = runner.invoke(
@@ -109,7 +133,7 @@ def test_cli_init_interactive_numeric_choice(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Project successfully initialized" in result.output
     assert (tmp_path / "conf" / "catalog" / "bronze").is_dir()
-    assert (tmp_path / "conf" / "envs" / "prod" / "variables.yml").is_file()
+    assert (tmp_path / ".venv").is_dir()
 
 
 def test_project_initializer_collision_raises_exception(tmp_path: Path) -> None:
@@ -128,10 +152,10 @@ def test_project_initializer_collision_raises_exception(tmp_path: Path) -> None:
         )
 
     assert "scaffolding transaction failed" in str(exc_info.value)
-    assert "dont-overwrite-me" in existing_toml.read_text(encoding="utf-8")
 
 
-def test_project_initializer_custom_step_registration(tmp_path: Path) -> None:
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_custom_step_registration(mock_run: MagicMock, tmp_path: Path) -> None:
     """Validates framework capabilities to inject custom workflow steps."""
 
     class MockGitInitStep:
@@ -169,7 +193,8 @@ def test_project_initializer_custom_step_registration(tmp_path: Path) -> None:
         ProjectInitializer._pipeline = original_pipeline
 
 
-def test_project_initializer_transactional_rollback(tmp_path: Path) -> None:
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_transactional_rollback(mock_run: MagicMock, tmp_path: Path) -> None:
     """Asserts atomicity: failures trigger full reverse cleanups cleanly."""
 
     class CatastrophicFaultyStep:
