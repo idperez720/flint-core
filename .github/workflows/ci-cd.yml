@@ -59,14 +59,28 @@ jobs:
     name: Automated Semantic Release and PyPI Deploy
     needs: test-and-lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Se agrega condición para evitar que el bot de la App genere bucles infinitos al hacer push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'automation-ruleset-bypass[bot]'
     permissions:
       contents: write
     steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BYPASS_APP_ID }}
+          private-key: ${{ secrets.BYPASS_APP_PRIVATE_KEY }}
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure Git Bot User
+        run: |
+          git config --global user.name "automation-ruleset-bypass[bot]"
+          git config --global user.email "automation-ruleset-bypass[bot]@://github.com"
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -84,7 +98,7 @@ jobs:
 
       - name: Execute Framework Versioning and Deployment
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
         run: |
           poetry run semantic-release version

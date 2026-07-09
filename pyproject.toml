@@ -136,6 +136,7 @@ asyncio_mode = "auto"
 version_variable = "flint_core/__init__.py:__version__"
 version_toml = ["pyproject.toml:project.version"]
 branch = "main"
+allow_zero_version = true
 upload_to_pypi = true
 upload_to_release = true
 build_command = "poetry build"
