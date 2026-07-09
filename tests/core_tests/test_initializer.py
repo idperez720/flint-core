@@ -1,6 +1,5 @@
 """Unit tests for the flint-core transactional project scaffolding engine."""
 
-import subprocess
 from pathlib import Path
 from typing import List
 from unittest.mock import MagicMock, patch
@@ -8,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from flint_core.cli import init
+from flint_core.cli import entry_point
 from flint_core.core.initializer import (
     ProjectInitializationError,
     ProjectInitializer,
@@ -73,6 +72,28 @@ def test_project_initializer_happy_path(mock_run: MagicMock, tmp_path: Path) -> 
 
 
 @patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_project_initializer_with_extras(mock_run: MagicMock, tmp_path: Path) -> None:
+    """Asserts that project initialization correctly maps selected extras."""
+    initializer = ProjectInitializer(base_path=tmp_path)
+
+    initializer.init_project(
+        name="extras-pipeline",
+        version="0.1.0",
+        description="Pipeline with components.",
+        author="Architecture Team",
+        envs=["dev"],
+        pattern="default",
+        manager="uv",
+        extras=["spark", "aws"],
+    )
+
+    toml_path = tmp_path / "pyproject.toml"
+    assert toml_path.is_file()
+    toml_content = toml_path.read_text(encoding="utf-8")
+    assert "flint-core[spark,aws]>=" in toml_content
+
+
+@patch("subprocess.run", side_effect=mock_subprocess_run)
 def test_project_initializer_medallion_pattern(mock_run: MagicMock, tmp_path: Path) -> None:
     """Asserts that medallion pattern builds bronze, silver, and gold branches."""
     initializer = ProjectInitializer(base_path=tmp_path)
@@ -121,12 +142,14 @@ def test_cli_init_interactive_numeric_choice(mock_run: MagicMock, tmp_path: Path
         "CLI Tester",  # Author
         "dev,prod",  # Environments
         "2",  # Pattern Choice (2 = medallion)
-        "venv",  # NEW: Package manager selection prompt items
+        "venv",  # Package manager selection prompt items
+        "1",  # INTERACTIVE EXTRAS: Toggle option 1 (spark)
+        "0",  # INTERACTIVE EXTRAS: Confirm and continue execution
     ]
 
     result = runner.invoke(
-        init,
-        ["--path", str(tmp_path)],
+        entry_point,
+        ["init", "--path", str(tmp_path)],
         input="\n".join(inputs) + "\n",
     )
 
@@ -134,6 +157,33 @@ def test_cli_init_interactive_numeric_choice(mock_run: MagicMock, tmp_path: Path
     assert "Project successfully initialized" in result.output
     assert (tmp_path / "conf" / "catalog" / "bronze").is_dir()
     assert (tmp_path / ".venv").is_dir()
+
+
+@patch("subprocess.run", side_effect=mock_subprocess_run)
+def test_cli_init_headless_with_extras(mock_run: MagicMock, tmp_path: Path) -> None:
+    """Asserts that headless automated initializations support explicit extras."""
+    runner = CliRunner()
+    result = runner.invoke(
+        entry_point,
+        [
+            "init",
+            "--path",
+            str(tmp_path),
+            "--name",
+            "headless-pipeline",
+            "--no-input",
+            "--manager",
+            "poetry",
+            "--extras",
+            "spark,pandas",
+        ],
+    )
+
+    assert result.exit_code == 0
+    toml_path = tmp_path / "pyproject.toml"
+    assert toml_path.is_file()
+    toml_content = toml_path.read_text(encoding="utf-8")
+    assert 'extras = ["spark", "pandas"]' in toml_content
 
 
 def test_project_initializer_collision_raises_exception(tmp_path: Path) -> None:
