@@ -1,6 +1,5 @@
 site_name: flint-core
-site_description: Minimalist, agnostic framework designed to standardize data
-engineering pipelines in Python
+site_description: Minimalist, agnostic framework designed to standardize data engineering pipelines in Python
 site_author: Ivan Perez
 
 repo_name: idperez720/flint-core
