@@ -35,7 +35,7 @@ safely across both Pandas and PySpark architectures.
 ## 📖 Complete Documentation
 
 For comprehensive guides, testing architecture deep-dives, and complete API references, visit our documentation site:
-👉 **[http://127.0.0.1:8000/](https://www.google.com/search?q=http://127.0.0.1:8000/)** *(Replace with your deployed docs URL, e.g., GitHub Pages)*
+👉 **[Flint Core Docs](https://flint-core.readthedocs.io/en/latest/)**
 
 ---
 
