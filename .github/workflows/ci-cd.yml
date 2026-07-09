@@ -99,7 +99,7 @@ jobs:
       - name: Execute Framework Versioning and Deployment
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
           poetry run semantic-release version
           poetry run semantic-release publish
