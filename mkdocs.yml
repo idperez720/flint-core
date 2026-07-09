@@ -1,7 +1,7 @@
 site_name: flint-core
 site_description: Data Engineering Experience Framework
 site_author: Ivan Perez
-site_url: https://github.com/idperez720/data-engineering-exp  # Optional: change to your repo URL
+site_url: https://github.com/idperez720/data-engineering-exp
 
 theme:
   name: material
@@ -40,6 +40,14 @@ plugins:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - User Guide:
+      - Data Catalog & Environments: catalog.md
+      - Data Ingestion & Persistence (I/O): io-guide.md
+      - Engines, Formats & Platforms: engines-platforms.md
   - API Reference:
       - Data Catalog: api/catalog.md
       - Data Loader (I/O): api/io.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
