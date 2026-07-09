@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.2 (2026-07-09)
+
+### Bug Fixes
+
+- Update CI/CD workflow to use POETRY_PYPI_TOKEN and adjust upload settings
+  ([`8bc6565`](https://github.com/idperez720/flint-core/commit/8bc6565e2194e9d817234260e9a235dc5dc7f76c))
+
+
 ## v0.4.1 (2026-07-09)
 
 ### Bug Fixes
