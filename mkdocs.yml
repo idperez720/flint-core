@@ -1,7 +1,14 @@
 site_name: flint-core
-site_description: Data Engineering Experience Framework
+site_description: Minimalist, agnostic framework designed to standardize data
+engineering pipelines in Python
 site_author: Ivan Perez
-site_url: https://github.com/idperez720/flint-core
+
+repo_name: idperez720/flint-core
+repo_url: https://github.com/idperez720/flint-core
+
+
+site_url: https://flint-core.readthedocs.io/
+
 
 theme:
   name: material
