@@ -3,8 +3,6 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main, dev ]
-    tags:
-      - 'v*'
   pull_request:
     branches: [ main, dev ]
 
@@ -36,7 +34,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/pyproject.toml') }}
+          key: >-
+            venv-${{ runner.os }}-${{ matrix.python-version }}-${{
+            hashFiles('**/pyproject.toml') }}
 
       - name: Install Project Dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
@@ -55,15 +55,18 @@ jobs:
       - name: Run Tests with Strict Coverage Gate (>= 60%)
         run: poetry run pytest --cov=flint_core --cov-fail-under=60
 
-  deploy-pypi:
-    name: Publish Artifact to PyPI
+  release:
+    name: Automated Semantic Release and PyPI Deploy
     needs: test-and-lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -79,10 +82,8 @@ jobs:
       - name: Install Dependencies
         run: poetry install --no-interaction --no-root --all-extras
 
-      - name: Build Package Distribution Binaries
-        run: poetry build
-
-      - name: Publish to PyPI Marketplace Index
+      - name: Run Python Semantic Release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+        run: poetry run semantic-release publish
