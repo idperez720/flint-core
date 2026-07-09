@@ -2,6 +2,56 @@
 
 <!-- version list -->
 
+## v0.4.3 (2026-07-09)
+
+### Bug Fixes
+
+- Add interactive extras selection and dependency installation for project initialization
+  ([`9e4d754`](https://github.com/idperez720/flint-core/commit/9e4d7544182c08fabb4b250dbbb0d897bfbb4f5d))
+
+### Chores
+
+- Update poetry publish command to skip existing packages
+  ([`f514985`](https://github.com/idperez720/flint-core/commit/f514985f39e88d7b2fbf1844afe16249dd897f55))
+
+### Documentation
+
+- Add comprehensive documentation for data catalog, ingestion, and persistence
+  ([`ec5e9e6`](https://github.com/idperez720/flint-core/commit/ec5e9e6145b0c3ae5e7df94f8be944cb60435037))
+
+- Add mkdocs-material to requirements for enhanced documentation styling
+  ([`7c67760`](https://github.com/idperez720/flint-core/commit/7c67760598c845d9364de7983f24ada0bfe78348))
+
+- Add mkdocstrings to requirements for enhanced documentation support
+  ([`dc4db82`](https://github.com/idperez720/flint-core/commit/dc4db823ee7f0429c8b6f081a52c9f10b10dc74b))
+
+- Add Read the Docs configuration and mkdocs requirements
+  ([`2b99156`](https://github.com/idperez720/flint-core/commit/2b99156a6e502ad6ab7bcb621c539c21287caa1e))
+
+- Correct command syntax for uvx initialization in getting started guide
+  ([`9a37322`](https://github.com/idperez720/flint-core/commit/9a37322ac8fd8526697f731d826fc3b4dd4c4200))
+
+- Fix formatting of site_description in mkdocs configuration
+  ([`5349a0d`](https://github.com/idperez720/flint-core/commit/5349a0d91a3719c301d5a761f93239fc725bc08a))
+
+- Reorder repository information in mkdocs configuration
+  ([`80ac7ab`](https://github.com/idperez720/flint-core/commit/80ac7ab38bdf6733465a804b98cb2726ddd0a719))
+
+- Update README to reflect framework name and enhance core features section
+  ([`bf6e2f2`](https://github.com/idperez720/flint-core/commit/bf6e2f2b8a21a518c82f2da9d3e85170e7541c31))
+
+- Update README with correct documentation URL and enhance mkdocs configuration
+  ([`4ebb0d3`](https://github.com/idperez720/flint-core/commit/4ebb0d3dde0e755ca278c799d5351c3a8afb0250))
+
+- Update site_url in mkdocs configuration
+  ([`92ab9d5`](https://github.com/idperez720/flint-core/commit/92ab9d577e02bda26c7e1f3c597f39eefeaa10aa))
+
+### Testing
+
+- Enhance project initializer tests with extras handling and CLI integration
+  ([`49078af`](https://github.com/idperez720/flint-core/commit/49078af7ce704987b18aa643f88a686c88748df4))
+
+
 ## v0.4.2 (2026-07-09)
 
 ### Bug Fixes
