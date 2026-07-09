@@ -16,7 +16,7 @@ instantly inside a temporary sandbox:
 
 ```bash
 # Using uvx (Blazing fast alternative via astral's uv)
-uvx flint-core init
+uvx --from flint-core flint init
 
 # Using pipx
 pipx run flint-core init
