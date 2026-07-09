@@ -1,6 +1,6 @@
 [project]
 name = "flint-core"
-version = "0.3.3"
+version = "0.4.0"
 description = "A minimalist, agnostic Python framework to standardize data engineering pipelines."
 authors = [
     {name = "idperez720", email = "ivandavidperez4@gmail.com"}
