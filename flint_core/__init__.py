@@ -4,7 +4,7 @@ import logging
 
 from flint_core.functions import deduplication, scd2
 
-__version__ = "0.1.0"
+__version__ = "0.3.3"
 
 logger = logging.getLogger(__name__)
 
