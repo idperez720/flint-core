@@ -1,7 +1,7 @@
 site_name: flint-core
 site_description: Data Engineering Experience Framework
 site_author: Ivan Perez
-site_url: https://github.com/idperez720/data-engineering-exp
+site_url: https://github.com/idperez720/flint-core
 
 theme:
   name: material
