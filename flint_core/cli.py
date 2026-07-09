@@ -63,6 +63,51 @@ PATTERN_MAP: Dict[str, str] = {
 
 
 # =============================================================================
+# INTERACTIVE EXTRAS UTILITY HELPER
+# =============================================================================
+
+
+def _prompt_extras_interactive() -> List[str]:
+    """Displays an interactive checklist to select framework extra dependencies.
+
+    Returns:
+        A parsed collection of unique data platform components selected by numbers.
+    """
+    options = ["spark", "pandas", "aws", "gcp", "s3", "snowflake"]
+    selected = [False] * len(options)
+
+    while True:
+        click.echo("\nSelect optional flint-core extras to install:")
+        for i, option in enumerate(options):
+            status = "[X]" if selected[i] else "[ ]"
+            click.echo(f"  {i + 1} - {status} {option}")
+        click.echo("  0 - [Confirm and Continue]\n")
+
+        choice = click.prompt(
+            click.style("? Select option to toggle", fg="green", bold=True),
+            type=str,
+            default="0",
+            show_default=False,
+        ).strip()
+
+        if choice in ("0", ""):
+            break
+
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                selected[idx] = not selected[idx]
+                # Dynamic terminal clear screen sequence via ANSI
+                click.echo("\033[H\033[J", nl=False)
+            else:
+                click.secho("⚠️ Option out of range.", fg="yellow", err=True)
+        except ValueError:
+            click.secho("⚠️ Invalid numeric entry.", fg="yellow", err=True)
+
+    return [options[i] for i, is_set in enumerate(selected) if is_set]
+
+
+# =============================================================================
 # CORE CLI GROUP INTERFACE
 # =============================================================================
 
@@ -127,6 +172,11 @@ def entry_point() -> None:
     help="Target python environment package manager tool selection.",
 )
 @click.option(
+    "--extras",
+    type=str,
+    help="Target extra dependencies to configure as a comma-separated list.",
+)
+@click.option(
     "--no-input",
     is_flag=True,
     default=False,
@@ -141,6 +191,7 @@ def init(
     envs: Optional[str],
     pattern: Optional[str],
     manager: Optional[str],
+    extras: Optional[str],
     no_input: bool,
 ) -> None:
     """Scaffold a new production-ready data engineering project layout transactionally.
@@ -176,6 +227,8 @@ def init(
         else:
             final_domains_str = ""
         final_manager = manager if manager else "venv"
+        final_extras_str = extras if extras else ""
+        parsed_extras = [ex.strip().lower() for ex in final_extras_str.split(",") if ex.strip()]
     else:
         final_name = (
             name
@@ -264,6 +317,9 @@ def init(
         else:
             final_manager = manager
 
+        # Invoke interactive selection menu for extras without manual typing
+        parsed_extras = _prompt_extras_interactive()
+
     parsed_envs = [e.strip().lower() for e in final_envs_str.split(",") if e.strip()]
     parsed_domains = [d.strip().lower() for d in final_domains_str.split(",") if d.strip()]
 
@@ -278,6 +334,7 @@ def init(
             pattern=final_pattern,
             domains=parsed_domains,
             manager=final_manager,
+            extras=parsed_extras,
         )
         click.secho(
             f"\n✨ Project successfully initialized at '{resolved_path}'!",

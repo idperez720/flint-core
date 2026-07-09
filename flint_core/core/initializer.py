@@ -7,7 +7,7 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Protocol, Type, Union, runtime_checkable
+from typing import Callable, Dict, List, Optional, Protocol, Type, Union, cast, runtime_checkable
 
 from flint_core.core.exceptions import ProjectInitializationError
 
@@ -93,6 +93,10 @@ class EnvironmentStrategy(Protocol):
         """Executes the command routines to allocate a virtual environment."""
         ...
 
+    def install_dependencies(self, context: ScaffoldContext) -> None:
+        """Installs the framework and its chosen extras inside the allocated env."""
+        ...
+
 
 class EnvironmentRegistry:
     """Central lookup map routing environment strategy resolutions dynamically."""
@@ -126,10 +130,12 @@ class UvEnvironmentStrategy:
     """Handles high-performance PEP 621 configurations and environments via uv."""
 
     def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
-        """Writes standard pyproject.toml and requirements.txt for uv."""
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.exists():
             raise FileExistsError("A configuration manifest file already exists.")
+
+        extras: List[str] = cast(List[str], context.metadata.get("extras", []))
+        extras_buf = f"[{','.join(extras)}]" if extras else ""
 
         toml_content = textwrap.dedent(f"""\
             [project]
@@ -141,7 +147,7 @@ class UvEnvironmentStrategy:
             ]
             requires-python = ">=3.11,<4.0.0"
             dependencies = [
-                "flint-core>={version_str}",
+                "flint-core{extras_buf}>={version_str}",
             ]
         """)
         with open(toml_path, "w", encoding="utf-8") as file:
@@ -149,10 +155,9 @@ class UvEnvironmentStrategy:
 
         req_path = context.root_path / "requirements.txt"
         with open(req_path, "w", encoding="utf-8") as file:
-            file.write(f"flint-core>={version_str}\n")
+            file.write(f"flint-core{extras_buf}>={version_str}\n")
 
     def create_environment(self, context: ScaffoldContext) -> None:
-        """Executes explicit virtual workspace instantiation via uv commands."""
         try:
             subprocess.run(
                 ["uv", "venv", ".venv"],
@@ -162,9 +167,19 @@ class UvEnvironmentStrategy:
                 text=True,
             )
         except (subprocess.SubprocessError, FileNotFoundError) as err:
-            raise RuntimeError(
-                "Failed to allocate virtual environment via 'uv'. Verify the 'uv' binary is available on system PATH."
-            ) from err
+            raise RuntimeError("Failed to allocate virtual environment via 'uv'.") from err
+
+    def install_dependencies(self, context: ScaffoldContext) -> None:
+        """Invokes high-speed synchronization over uv pip boundaries."""
+        try:
+            subprocess.run(
+                ["uv", "pip", "install", "-r", "requirements.txt"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.SubprocessError as err:
+            raise RuntimeError("Failed to resolve sync dependencies via 'uv'.") from err
 
 
 @EnvironmentRegistry.register("poetry")
@@ -172,10 +187,16 @@ class PoetryEnvironmentStrategy:
     """Handles modern deployment setups governed by poetry standards layouts."""
 
     def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
-        """Writes native traditional Poetry project metadata setups."""
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.exists():
             raise FileExistsError("A configuration manifest file already exists.")
+
+        extras: List[str] = cast(List[str], context.metadata.get("extras", []))
+        if extras:
+            extras_formatted = ", ".join(f'"{e}"' for e in extras)
+            flint_dependency = f'flint-core = {{ version = "^{version_str}", extras = [{extras_formatted}] }}'
+        else:
+            flint_dependency = f'flint-core = "^{version_str}"'
 
         content = textwrap.dedent(f"""\
             [tool.poetry]
@@ -186,7 +207,7 @@ class PoetryEnvironmentStrategy:
 
             [tool.poetry.dependencies]
             python = ">=3.11,<4.0.0"
-            flint-core = "^{version_str}"
+            {flint_dependency}
 
             [build-system]
             requires = ["poetry-core"]
@@ -196,7 +217,6 @@ class PoetryEnvironmentStrategy:
             file.write(content)
 
     def create_environment(self, context: ScaffoldContext) -> None:
-        """Configures in-project sandboxes and triggers poetry environments."""
         try:
             subprocess.run(
                 ["poetry", "config", "virtualenvs.in-project", "true"],
@@ -211,10 +231,18 @@ class PoetryEnvironmentStrategy:
                 capture_output=True,
             )
         except (subprocess.SubprocessError, FileNotFoundError) as err:
-            raise RuntimeError(
-                "Failed to allocate virtual environment via 'poetry'. "
-                "Verify the 'poetry' binary is available on system PATH."
-            ) from err
+            raise RuntimeError("Failed to allocate virtual environment via 'poetry'.") from err
+
+    def install_dependencies(self, context: ScaffoldContext) -> None:
+        try:
+            subprocess.run(
+                ["poetry", "install"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.SubprocessError as err:
+            raise RuntimeError("Poetry lifestyle optimization environment lock failed.") from err
 
 
 @EnvironmentRegistry.register("venv")
@@ -223,10 +251,12 @@ class VenvEnvironmentStrategy:
     """Fallback strategy allocating vanilla system virtual environments."""
 
     def write_manifests(self, context: ScaffoldContext, version_str: str) -> None:
-        """Writes standard pyproject.toml and requirements.txt for pip/venv."""
         toml_path = context.root_path / "pyproject.toml"
         if toml_path.exists():
             raise FileExistsError("A configuration manifest file already exists.")
+
+        extras: List[str] = cast(List[str], context.metadata.get("extras", []))
+        extras_buf = f"[{','.join(extras)}]" if extras else ""
 
         toml_content = textwrap.dedent(f"""\
             [project]
@@ -243,10 +273,9 @@ class VenvEnvironmentStrategy:
 
         req_path = context.root_path / "requirements.txt"
         with open(req_path, "w", encoding="utf-8") as file:
-            file.write(f"flint-core>={version_str}\n")
+            file.write(f"flint-core{extras_buf}>={version_str}\n")
 
     def create_environment(self, context: ScaffoldContext) -> None:
-        """Triggers local python standard library venv sub-process creation."""
         try:
             subprocess.run(
                 [sys.executable, "-m", "venv", ".venv"],
@@ -256,6 +285,19 @@ class VenvEnvironmentStrategy:
             )
         except subprocess.SubprocessError as err:
             raise RuntimeError("Failed to instantiate python standard library venv.") from err
+
+    def install_dependencies(self, context: ScaffoldContext) -> None:
+        bindir = "Scripts" if sys.platform == "win32" else "bin"
+        pip_path = context.root_path / ".venv" / bindir / "pip"
+        try:
+            subprocess.run(
+                [str(pip_path), "install", "-r", "requirements.txt"],
+                cwd=context.root_path,
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.SubprocessError as err:
+            raise RuntimeError("Standard python fallback environment pip install crashed.") from err
 
 
 class DirectoryStructureStep:
@@ -323,11 +365,9 @@ class WorkspaceEnvironmentStep:
 
     @property
     def name(self) -> str:
-        """Returns the naming descriptor tag marking manifest and env setup rules."""
         return "Workspace Isolation and Environment Configuration Setup"
 
     def execute(self, context: ScaffoldContext) -> None:
-        """Generates manifests and builds isolated environments via active registry."""
         try:
             version_str = importlib.metadata.version("flint-core")
         except importlib.metadata.PackageNotFoundError:
@@ -353,6 +393,8 @@ class WorkspaceEnvironmentStep:
         venv_path = context.root_path / ".venv"
         if venv_path.exists():
             context.created_paths.append(venv_path)
+
+        strategy.install_dependencies(context)
 
     def rollback(self, context: ScaffoldContext) -> None:
         """Retroactively unlinks manifests and cleans up environments."""
@@ -593,22 +635,8 @@ class ProjectInitializer:
         pattern: Optional[str] = None,
         domains: Optional[List[str]] = None,
         manager: Optional[str] = None,
+        extras: Optional[List[str]] = None,  # <- Añadido
     ) -> None:
-        """Initialize the target workspace structures transactionally.
-
-        Args:
-            name: Explicit name designation of the data platform workspace.
-            version: Target initial configuration semantic version string.
-            description: Concise purpose statement tracking the platform.
-            author: Identity alias marking structural system ownership.
-            envs: Optional list of isolated operational runtime environments.
-            pattern: Targeted architectural data layout framework pattern.
-            domains: Dedicated operational business domain areas for mesh.
-            manager: Targeted packaging framework tool strategy flag selector.
-
-        Raises:
-            ProjectInitializationError: When any core stage execution crashes.
-        """
         context = ScaffoldContext(
             root_path=self.base_path,
             name=name,
@@ -620,6 +648,7 @@ class ProjectInitializer:
         context.metadata["pattern"] = pattern if pattern else "default"
         context.metadata["domains"] = domains if domains else []
         context.metadata["manager"] = manager if manager else "venv"
+        context.metadata["extras"] = extras if extras else []  # <- Asignado
 
         completed_stages: List[ScaffoldStep] = []
         for step in self._pipeline:
