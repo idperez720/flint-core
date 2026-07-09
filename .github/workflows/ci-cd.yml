@@ -82,8 +82,10 @@ jobs:
       - name: Install Dependencies
         run: poetry install --no-interaction --no-root --all-extras
 
-      - name: Run Python Semantic Release
+      - name: Execute Framework Versioning and Deployment
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POETRY_PYPI_TOKEN_PYPI: ${{ secrets.PYPI_TOKEN }}
-        run: poetry run semantic-release publish
+        run: |
+          poetry run semantic-release version
+          poetry run semantic-release publish
