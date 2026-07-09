@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v0.4.1 (2026-07-09)
+
+### Bug Fixes
+
+- Update environment variable name for PyPI token in CI/CD workflow
+  ([`4f16de6`](https://github.com/idperez720/flint-core/commit/4f16de6d8dc18bcab382094f2625e9f70a9eb681))
+
+
 ## v0.4.0 (2026-07-09)
 
 ### Bug Fixes
