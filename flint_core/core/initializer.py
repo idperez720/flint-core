@@ -177,9 +177,13 @@ class UvEnvironmentStrategy:
                 cwd=context.root_path,
                 check=True,
                 capture_output=True,
+                text=True,
             )
-        except subprocess.SubprocessError as err:
-            raise RuntimeError("Failed to resolve sync dependencies via 'uv'.") from err
+        except subprocess.CalledProcessError as err:
+            raise RuntimeError(
+                f"Failed to resolve sync dependencies via 'uv'. "
+                f"Details: {err.stderr.strip()}"
+            ) from err
 
 
 @EnvironmentRegistry.register("poetry")
@@ -234,15 +238,20 @@ class PoetryEnvironmentStrategy:
             raise RuntimeError("Failed to allocate virtual environment via 'poetry'.") from err
 
     def install_dependencies(self, context: ScaffoldContext) -> None:
+        """Executes full locking and dependency installation via poetry."""
         try:
             subprocess.run(
                 ["poetry", "install"],
                 cwd=context.root_path,
                 check=True,
                 capture_output=True,
+                text=True,
             )
-        except subprocess.SubprocessError as err:
-            raise RuntimeError("Poetry lifestyle optimization environment lock failed.") from err
+        except subprocess.CalledProcessError as err:
+            raise RuntimeError(
+                f"Poetry lifestyle optimization environment lock failed. "
+                f"Details: {err.stderr.strip()}"
+            ) from err
 
 
 @EnvironmentRegistry.register("venv")
@@ -287,6 +296,7 @@ class VenvEnvironmentStrategy:
             raise RuntimeError("Failed to instantiate python standard library venv.") from err
 
     def install_dependencies(self, context: ScaffoldContext) -> None:
+        """Performs traditional python pip package installation loop."""
         bindir = "Scripts" if sys.platform == "win32" else "bin"
         pip_path = context.root_path / ".venv" / bindir / "pip"
         try:
@@ -295,9 +305,13 @@ class VenvEnvironmentStrategy:
                 cwd=context.root_path,
                 check=True,
                 capture_output=True,
+                text=True,
             )
-        except subprocess.SubprocessError as err:
-            raise RuntimeError("Standard python fallback environment pip install crashed.") from err
+        except subprocess.CalledProcessError as err:
+            raise RuntimeError(
+                f"Standard python fallback environment pip install crashed. "
+                f"Details: {err.stderr.strip()}"
+            ) from err
 
 
 class DirectoryStructureStep:
