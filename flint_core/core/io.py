@@ -141,7 +141,7 @@ class DataSaver:
         """
         if replace_where and mode != "overwrite":
             raise ValueError("The 'replace_where' parameter can only be utilized when mode='overwrite'.")
-        
+
         dataset = self.catalog.get_dataset(dataset_name)
 
         # CRITICAL VALIDATION ENFORCEMENT: Guard schema contract boundaries
