@@ -241,6 +241,12 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         handler = self._resolve_format_handler(data_format)
         fmt_clean = data_format.strip().lower()
 
+        replace_where = metadata.get("replace_where") if metadata else None
+
+        if replace_where and fmt_clean == "delta":
+            options["predicate"] = replace_where
+            options["mode"] = "overwrite"
+
         is_relational = fmt_clean in (
             "postgres",
             "postgresql",
@@ -264,7 +270,7 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         if not is_cloud and not is_relational:
             file_path = Path(path)
             if file_path.exists():
-                if mode == "error":
+                if mode == "error" and not replace_where:
                     raise FileExistsError(f"Target path already exists locally: '{path}'.")
                 if mode == "ignore":
                     return
@@ -290,6 +296,20 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
 
             df_enforced = self._apply_primitive_dtypes(df_enforced, dtype_dict)
             df_enforced = self._enforce_rich_types(df_enforced, columns, parse_dates_fallback)
+
+        if replace_where and mode == "overwrite" and fmt_clean != "delta" and not is_relational:
+            try:
+                file_exists = Path(path).exists() if not is_cloud else True
+                if file_exists:
+                    existing_df = self.load(
+                        path=path, data_format=data_format, columns=columns, metadata=metadata, spark=spark
+                    )
+                    preserved_df = existing_df.query(f"not ({replace_where})")
+                    df_enforced = pd.concat([preserved_df, df_enforced], ignore_index=True)
+            except Exception as e:
+                logger.warning(
+                    "Could not read existing data for replaceWhere simulation, writing input fallback: %s", e
+                )
 
         handler.write(df_enforced, path, options)
 

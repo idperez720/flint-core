@@ -365,3 +365,102 @@ def test_spark_jdbc_schema_qualified_table_routing(tmp_path: Path, spark_session
         mock_table.assert_not_called()
         # 2. It must delegate the responsibility directly to the native JDBC .load() reader
         mock_load.assert_called_once()
+
+
+# =============================================================================
+# NEW: REPLACE WHERE PARTIAL OVERWRITE TEST SUITE
+# =============================================================================
+
+
+def test_data_saver_replace_where_validation_guard(
+    mock_advanced_io_environment: DataCatalog,
+) -> None:
+    """Asserts that replace_where raises a ValueError if the operational mode is not 'overwrite'."""
+    pd = pytest.importorskip("pandas")
+    test_df = pd.DataFrame({"id": [1], "price": [99.99]})
+    saver = DataSaver(catalog=mock_advanced_io_environment)
+
+    with pytest.raises(ValueError) as exc_info:
+        saver.save(test_df, "csv_dataset", mode="append", replace_where="id == 1")
+
+    assert "replace_where' parameter can only be utilized when mode='overwrite'" in str(exc_info.value)
+
+
+def test_spark_engine_replace_where_native_option_propagation(
+    mock_advanced_io_environment: DataCatalog,
+    spark_session: Any,
+) -> None:
+    """Asserts that the replace_where condition is dynamically bound to Spark's DataFrameWriter option pool."""
+    pytest.importorskip("pyspark")
+
+    df = spark_session.createDataFrame([(1, decimal.Decimal("99.99"))], ["id", "price"])
+    saver = DataSaver(catalog=mock_advanced_io_environment)
+
+    with patch("pyspark.sql.readwriter.DataFrameWriter.option", return_value=df.write) as mock_option:
+        with patch("flint_core.spark_core.engine.CSVFormatHandler.write"):
+            saver.save(df, "spark_csv_dataset", mode="overwrite", replace_where="id = 1")
+            mock_option.assert_any_call("replaceWhere", "id = 1")
+
+
+def test_pandas_engine_replace_where_local_simulation(
+    mock_advanced_io_environment: DataCatalog,
+) -> None:
+    """Validates the atomic Read-Filter-Append-Write memory parities simulation for traditional local files in Pandas."""
+    pd = pytest.importorskip("pandas")
+    saver = DataSaver(catalog=mock_advanced_io_environment)
+    loader = DataLoader(catalog=mock_advanced_io_environment)
+
+    # The initial fixture state contains id=1 ($99.99) and id=2 ($150.50).
+    # Save partial new data to replace only the logical partition where id==1.
+    new_df = pd.DataFrame({"id": [1, 3], "price": [11.11, 300.00]})
+    saver.save(new_df, "csv_dataset", mode="overwrite", replace_where="id == 1")
+
+    # Re-ingest the resulting consolidated matrix to verify idempotence and parity.
+    result_df = loader.load("csv_dataset")
+
+    assert len(result_df) == 3
+    assert 2 in result_df["id"].values  # Must be preserved intact.
+    assert 1 in result_df["id"].values  # Replaced.
+    assert 3 in result_df["id"].values  # Inserted.
+
+    price_id_2 = result_df[result_df["id"] == 2]["price"].iloc[0]
+    price_id_1 = result_df[result_df["id"] == 1]["price"].iloc[0]
+
+    assert price_id_2 == decimal.Decimal("150.50")
+    assert price_id_1 == decimal.Decimal("11.11")
+
+
+def test_pandas_engine_delta_replace_where_native_mapping(
+    tmp_path: Path,
+) -> None:
+    """Asserts that replace_where maps to native predicate dictionaries for Delta Lake handlers in Pandas."""
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("deltalake")
+
+    catalog_dir = tmp_path / "conf" / "catalog"
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+    with open(tmp_path / "pyproject.toml", "w", encoding="utf-8") as f:
+        f.write('[project]\nname = "test-pandas-delta"\n')
+
+    delta_catalog = {
+        "delta_dataset": {
+            "engine": "pandas",
+            "format": "delta",
+            "storage_path": "data/delta_table",
+        }
+    }
+    with open(catalog_dir / "delta.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(delta_catalog, f)
+
+    catalog = DataCatalog(catalog_path=catalog_dir)
+    saver = DataSaver(catalog=catalog)
+    dummy_df = pd.DataFrame({"col": [1]})
+
+    with patch("flint_core.pandas_core.engine.DeltaFormatHandler.write") as mock_delta_write:
+        saver.save(dummy_df, "delta_dataset", mode="overwrite", replace_where="col == 1")
+        mock_delta_write.assert_called_once()
+
+        # Inspect the configuration options passed to the Handler (third positional argument).
+        passed_options = mock_delta_write.call_args[0][2]
+        assert passed_options.get("predicate") == "col == 1"
+        assert passed_options.get("mode") == "overwrite"

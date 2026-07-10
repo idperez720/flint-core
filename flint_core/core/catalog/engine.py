@@ -144,13 +144,16 @@ class DataCatalog:
         mode: str = "error",
         spark: Optional[Any] = None,
         options: Optional[Dict[str, Any]] = None,
+        replace_where: Optional[str] = None,
     ) -> None:
         """Saves a dataset executing dynamic engine-specific write procedures."""
         from flint_core.core.io import DataSaver
 
         with self._lock:
             saver = DataSaver(catalog=self)
-            saver.save(df=df, dataset_name=dataset_name, mode=mode, spark=spark, options=options)
+            saver.save(
+                df=df, dataset_name=dataset_name, mode=mode, spark=spark, options=options, replace_where=replace_where
+            )
 
     def reload_catalog(self, path: Path) -> None:
         """Flushes registers rebuilding the complete metadata catalog space."""

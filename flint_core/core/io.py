@@ -127,6 +127,7 @@ class DataSaver:
         mode: str = "error",
         spark: Optional[Any] = None,
         options: Optional[Dict[str, Any]] = None,
+        replace_where: Optional[str] = None,
     ) -> None:
         """Saves a polymorphic dataframe executing engine write procedures.
 
@@ -136,7 +137,11 @@ class DataSaver:
             mode: Operational write behavior strategy rule instructions.
             spark: Optional active distributed SparkSession engine context.
             options: Runtime dictionary configuration writing overrides mapping.
+            replace_where: Optional condition for replacing existing data.
         """
+        if replace_where and mode != "overwrite":
+            raise ValueError("The 'replace_where' parameter can only be utilized when mode='overwrite'.")
+        
         dataset = self.catalog.get_dataset(dataset_name)
 
         # CRITICAL VALIDATION ENFORCEMENT: Guard schema contract boundaries
@@ -154,6 +159,7 @@ class DataSaver:
             **runtime_options,
         }
         combined_metadata["connector"] = dataset.connector
+        combined_metadata["replace_where"] = replace_where
 
         engine = EngineRegistry.get_engine(dataset.engine)
         engine.save(

@@ -263,6 +263,9 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
         handler = self._resolve_format_handler(data_format)
         writer = df.write.mode(mode)
 
+        if metadata and metadata.get("replace_where"):
+            writer = writer.option("replaceWhere", metadata["replace_where"])
+
         if metadata and "options" in metadata:
             opts = metadata["options"]
             if isinstance(opts, dict):
