@@ -42,5 +42,3 @@ For comprehensive guides, testing architecture deep-dives, and complete API refe
 ## ⚖️ License
 
 Distributed under the **MIT License**. Any modification or distribution (including forks) must include the original copyright notice and liability waiver. See `LICENSE` for more information.
-
-```
