@@ -2,6 +2,30 @@
 
 <!-- version list -->
 
+## v0.4.4 (2026-07-10)
+
+### Bug Fixes
+
+- Add control flag for JDBC catalog table preference in SparkDatabaseFormatHandler
+  ([`81fb330`](https://github.com/idperez720/flint-core/commit/81fb330ffa500f140b6ea4c8b1414709e90f2f16))
+
+- Improve error handling in Uv, Poetry, and Venv environment strategies
+  ([`025c85a`](https://github.com/idperez720/flint-core/commit/025c85a6b16082ec10e80b0e953b1ef2e67d16e7))
+
+- Streamline error messages in Uv, Poetry, and Venv environment strategies
+  ([`94dddce`](https://github.com/idperez720/flint-core/commit/94dddce4a11a7bb6172fac89122ba1039cd3d50c))
+
+### Documentation
+
+- Ensure newline at end of file in README.md
+  ([`c63d9dd`](https://github.com/idperez720/flint-core/commit/c63d9ddbefadb18744408bc3a9f0f4feff793a8b))
+
+### Testing
+
+- Add test for schema-qualified JDBC storage path routing
+  ([`28732d0`](https://github.com/idperez720/flint-core/commit/28732d07a1cf80b968ee46767599f6c65724a1f1))
+
+
 ## v0.4.3 (2026-07-09)
 
 ### Bug Fixes
