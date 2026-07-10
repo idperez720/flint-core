@@ -180,10 +180,7 @@ class UvEnvironmentStrategy:
                 text=True,
             )
         except subprocess.CalledProcessError as err:
-            raise RuntimeError(
-                f"Failed to resolve sync dependencies via 'uv'. "
-                f"Details: {err.stderr.strip()}"
-            ) from err
+            raise RuntimeError(f"Failed to resolve sync dependencies via 'uv'. Details: {err.stderr.strip()}") from err
 
 
 @EnvironmentRegistry.register("poetry")
@@ -249,8 +246,7 @@ class PoetryEnvironmentStrategy:
             )
         except subprocess.CalledProcessError as err:
             raise RuntimeError(
-                f"Poetry lifestyle optimization environment lock failed. "
-                f"Details: {err.stderr.strip()}"
+                f"Poetry lifestyle optimization environment lock failed. Details: {err.stderr.strip()}"
             ) from err
 
 
@@ -309,8 +305,7 @@ class VenvEnvironmentStrategy:
             )
         except subprocess.CalledProcessError as err:
             raise RuntimeError(
-                f"Standard python fallback environment pip install crashed. "
-                f"Details: {err.stderr.strip()}"
+                f"Standard python fallback environment pip install crashed. Details: {err.stderr.strip()}"
             ) from err
 
 
