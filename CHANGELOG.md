@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v0.5.0 (2026-07-10)
+
+### Bug Fixes
+
+- Enforce 'replace_where' parameter usage in DataSaver for overwrite mode only
+  ([`ca0cbda`](https://github.com/idperez720/flint-core/commit/ca0cbda60ca7205737ad09e18bc717a275b174fc))
+
+### Features
+
+- Add replace_where parameter for conditional data replacement in DataSaver and engines
+  ([`db0afc7`](https://github.com/idperez720/flint-core/commit/db0afc7bedc1f364616100e65ac6b4fbef8dc67d))
+
+
 ## v0.4.4 (2026-07-10)
 
 ### Bug Fixes
