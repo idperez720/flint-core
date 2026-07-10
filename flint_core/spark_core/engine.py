@@ -72,11 +72,15 @@ class SparkDatabaseFormatHandler(SparkFormatHandler, abc.ABC):
     """Abstract class bridging Spark relational pipelines via JDBC drivers."""
 
     __slots__ = ()
+    # NEW: Control flag to differentiate legitimate JDBC from in-memory catalog tables
+    prefer_catalog_table: bool = False
 
     def read(self, reader: DataFrameReader, path: str, schema: Optional[StructType]) -> SparkDataFrame:
-        if "." in path and "/" not in path:
+        # Check the flag before routing the execution flow to session.table()
+        if getattr(self, "prefer_catalog_table", False) and "." in path and "/" not in path:
             session = SparkSession.getActiveSession()
-            return session.table(path)
+            if session is not None:
+                return session.table(path)
         return reader.format("jdbc").option("dbtable", path).load()
 
     def write(self, writer: DataFrameWriter, path: str) -> None:
@@ -398,6 +402,7 @@ class SQLiteFormatHandler(SparkDatabaseFormatHandler):
 
 class DatabricksFormatHandler(SparkDatabaseFormatHandler):
     format_key = "databricks"
+    prefer_catalog_table = True
 
 
 class SnowflakeFormatHandler(SparkFormatHandler):
