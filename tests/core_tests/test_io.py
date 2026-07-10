@@ -325,3 +325,43 @@ def test_catalog_models_structural_validation_raises_parse_error() -> None:
             metadata={},
         )
     assert "columns' must be a valid list" in str(list_exc.value)
+
+
+def test_spark_jdbc_schema_qualified_table_routing(tmp_path: Path, spark_session: Any) -> None:
+    """Asserts that a schema-qualified JDBC storage_path (with a dot) is routed to JDBC loader, not session.table."""
+    pytest.importorskip("pyspark")
+    catalog_dir = tmp_path / "conf" / "catalog"
+    catalog_dir.mkdir(parents=True, exist_ok=True)
+
+    with open(tmp_path / "pyproject.toml", "w", encoding="utf-8") as f:
+        f.write('[project]\nname = "test-jdbc-routing"\n')
+
+    # Test configuration replicating the exact bug environment
+    jdbc_catalog = {
+        "postgres_schema_table": {
+            "engine": "spark",
+            "format": "postgres",
+            "storage_path": "bronze.ventas_raw",
+            "options": {"url": "jdbc:postgresql://127.0.0.1:5432/lakehouse", "driver": "org.postgresql.Driver"},
+        }
+    }
+
+    with open(catalog_dir / "jdbc_routing.yaml", "w", encoding="utf-8") as f:
+        yaml.dump(jdbc_catalog, f)
+
+    catalog = DataCatalog(catalog_path=catalog_dir)
+    loader = DataLoader(catalog=catalog)
+
+    # Intercept Spark internal API calls to evaluate routing correctness
+    with patch("pyspark.sql.DataFrameReader.load") as mock_load, patch("pyspark.sql.SparkSession.table") as mock_table:
+        try:
+            loader.load("postgres_schema_table", spark=spark_session)
+        except Exception:
+            # Ignore secondary connection failures due to lack of an active database instance
+            pass
+
+        # CRITICAL VALIDATIONS:
+        # 1. It must not attempt to look up an internal Spark SQL catalog table
+        mock_table.assert_not_called()
+        # 2. It must delegate the responsibility directly to the native JDBC .load() reader
+        mock_load.assert_called_once()
