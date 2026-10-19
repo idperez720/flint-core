@@ -62,10 +62,14 @@ integration, concurrent-writer safety, or crash-safe/atomic overwrite. Native
 Spark append/overwrite remain legacy operations, not the v1 atomic-create
 contract. No scheduler or Utilities are introduced, and the RFC remains Draft.
 
-## Local Results — October 18, 2026
+## Initial Local Results — October 18, 2026
 
 - Real local Spark I/O regressions: **36 passed**.
 - Complete suite (`pytest tests -q --tb=short`) with the same environment:
   **451 passed**, no skips or deselections.
 - No engine implementation changes were needed for these tested combinations.
   This is local source-checkout evidence, not a release or cluster certification.
+
+Subsequent [local Delta validation](delta-testing.md) covers the separate
+Delta Spark integration, its required setup, and an observed incompatible version
+pair. The initial native-format checks above do not substitute for those tests.
