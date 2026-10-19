@@ -521,7 +521,18 @@ class DeltaFormatHandler(PandasFormatHandler):
         version = opts.pop("versionAsOf", None)
         as_of = opts.pop("timestampAsOf", None)
 
-        dt = deltalake.DeltaTable(path, version=version, datetime=as_of, **opts)
+        if version is not None and as_of is not None:
+            raise ValueError("Specify either versionAsOf or timestampAsOf, not both.")
+        if isinstance(version, str) and version.isdecimal():
+            version = int(version)
+        if version is not None and (type(version) is not int or version < 0):
+            raise ValueError("versionAsOf must be a non-negative integer or a decimal integer string.")
+        if as_of is not None and (not isinstance(as_of, str) or not as_of.strip()):
+            raise ValueError("timestampAsOf must be a non-empty timestamp string.")
+
+        dt = deltalake.DeltaTable(path, version=version, **opts)
+        if as_of is not None:
+            dt.load_as_version(as_of)
         return dt.to_pandas()
 
     def write(self, df: pd.DataFrame, path: str, options: Dict[str, Any]) -> None:

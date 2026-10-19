@@ -39,6 +39,15 @@ Apache Iceberg), `DataLoader` maps time-travel parameters into standard keys:
 * Passing `version=4` injects `versionAsOf` into the underlying driver.
 * Passing `as_of="2026-07-09"` injects `timestampAsOf` into the backend.
 
+For the Pandas Delta adapter, `version` accepts a non-negative integer or its
+decimal string representation, including version `0`. Timestamp selection uses
+a full RFC 3339 timestamp such as `2026-07-09T12:00:00Z`, delegated to
+`deltalake.DeltaTable.load_as_version`. Use either a version or a timestamp, not
+both, including selectors supplied through catalog or runtime options.
+Invalid selectors fail explicitly; native snapshot errors propagate without
+falling back to the latest data. The local adapter is tested with
+`deltalake==1.6.1`; this does not certify Spark Delta or cloud credentials.
+
 ```python
 from flint_core.core.io import DataLoader
 
