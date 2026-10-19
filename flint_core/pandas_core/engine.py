@@ -28,6 +28,7 @@ from flint_core.core.exceptions import (
     ColumnValidationError,
     UnsupportedBackendError,
 )
+from flint_core.core.io import _validate_replace_where
 from flint_core.pandas_core.deduplication import PandasDeduplicationMixin
 from flint_core.pandas_core.scd2 import PandasSCD2Mixin
 
@@ -228,6 +229,8 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         spark: Optional[Any] = None,
     ) -> None:
         """Saves a local or cloud Pandas DataFrame executing strict validations."""
+        replace_where = metadata.get("replace_where") if metadata else None
+        _validate_replace_where(replace_where, mode, data_format)
         options = dict(metadata.get("options", {})) if metadata else {}
 
         if metadata and "infrastructure" in metadata:
@@ -241,9 +244,7 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         handler = self._resolve_format_handler(data_format)
         fmt_clean = data_format.strip().lower()
 
-        replace_where = metadata.get("replace_where") if metadata else None
-
-        if replace_where and fmt_clean == "delta":
+        if replace_where is not None:
             options["predicate"] = replace_where
             options["mode"] = "overwrite"
 
@@ -296,20 +297,6 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
 
             df_enforced = self._apply_primitive_dtypes(df_enforced, dtype_dict)
             df_enforced = self._enforce_rich_types(df_enforced, columns, parse_dates_fallback)
-
-        if replace_where and mode == "overwrite" and fmt_clean != "delta" and not is_relational:
-            try:
-                file_exists = Path(path).exists() if not is_cloud else True
-                if file_exists:
-                    existing_df = self.load(
-                        path=path, data_format=data_format, columns=columns, metadata=metadata, spark=spark
-                    )
-                    preserved_df = existing_df.query(f"not ({replace_where})")
-                    df_enforced = pd.concat([preserved_df, df_enforced], ignore_index=True)
-            except Exception as e:
-                logger.warning(
-                    "Could not read existing data for replaceWhere simulation, writing input fallback: %s", e
-                )
 
         handler.write(df_enforced, path, options)
 

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from flint_core.core.base import EngineRegistry
 from flint_core.core.catalog.models import DatasetConfiguration
+from flint_core.core.exceptions import UnsupportedBackendError
 
 
 def _resolve_path(raw_path: str, project_root: Path) -> str:
@@ -41,6 +42,18 @@ def _resolve_path(raw_path: str, project_root: Path) -> str:
     if not file_path.is_absolute():
         return str((project_root / file_path).resolve())
     return str(file_path.resolve())
+
+
+def _validate_replace_where(replace_where: Optional[str], mode: str, data_format: Optional[str] = None) -> None:
+    """Rejects ambiguous or unsupported conditional writes before any I/O."""
+    if replace_where is None:
+        return
+    if not isinstance(replace_where, str) or not replace_where.strip():
+        raise ValueError("The 'replace_where' parameter must be a non-empty string.")
+    if mode != "overwrite":
+        raise ValueError("The 'replace_where' parameter can only be utilized when mode='overwrite'.")
+    if data_format is not None and data_format.strip().lower() != "delta":
+        raise UnsupportedBackendError("The 'replace_where' parameter is supported only for the 'delta' format.")
 
 
 class DataLoader:
@@ -137,12 +150,12 @@ class DataSaver:
             mode: Operational write behavior strategy rule instructions.
             spark: Optional active distributed SparkSession engine context.
             options: Runtime dictionary configuration writing overrides mapping.
-            replace_where: Optional condition for replacing existing data.
+            replace_where: Optional non-empty condition for native Delta replacement.
         """
-        if replace_where and mode != "overwrite":
-            raise ValueError("The 'replace_where' parameter can only be utilized when mode='overwrite'.")
+        _validate_replace_where(replace_where, mode)
 
         dataset = self.catalog.get_dataset(dataset_name)
+        _validate_replace_where(replace_where, mode, dataset.format)
 
         # CRITICAL VALIDATION ENFORCEMENT: Guard schema contract boundaries
         dataset.validate_schema(df)

@@ -386,48 +386,36 @@ def test_data_saver_replace_where_validation_guard(
     assert "replace_where' parameter can only be utilized when mode='overwrite'" in str(exc_info.value)
 
 
-def test_spark_engine_replace_where_native_option_propagation(
+def test_spark_engine_replace_where_non_delta_rejected(
     mock_advanced_io_environment: DataCatalog,
     spark_session: Any,
 ) -> None:
-    """Asserts that the replace_where condition is dynamically bound to Spark's DataFrameWriter option pool."""
+    """Rejects a condition that Spark CSV would ignore during overwrite."""
     pytest.importorskip("pyspark")
 
     df = spark_session.createDataFrame([(1, decimal.Decimal("99.99"))], ["id", "price"])
     saver = DataSaver(catalog=mock_advanced_io_environment)
 
-    with patch("pyspark.sql.readwriter.DataFrameWriter.option", return_value=df.write) as mock_option:
-        with patch("flint_core.spark_core.engine.CSVFormatHandler.write"):
+    with patch("flint_core.spark_core.engine.CSVFormatHandler.write") as mock_write:
+        with pytest.raises(UnsupportedBackendError, match="replace_where.*delta"):
             saver.save(df, "spark_csv_dataset", mode="overwrite", replace_where="id = 1")
-            mock_option.assert_any_call("replaceWhere", "id = 1")
+        mock_write.assert_not_called()
 
 
-def test_pandas_engine_replace_where_local_simulation(
+def test_pandas_engine_replace_where_local_simulation_rejected(
     mock_advanced_io_environment: DataCatalog,
 ) -> None:
-    """Validates the atomic Read-Filter-Append-Write memory parities simulation for traditional local files in Pandas."""
+    """Rejects the unsafe local simulation without modifying the existing file."""
     pd = pytest.importorskip("pandas")
     saver = DataSaver(catalog=mock_advanced_io_environment)
-    loader = DataLoader(catalog=mock_advanced_io_environment)
-
-    # The initial fixture state contains id=1 ($99.99) and id=2 ($150.50).
-    # Save partial new data to replace only the logical partition where id==1.
+    target = mock_advanced_io_environment.project_root / "data" / "dataset.csv"
+    original = target.read_bytes()
     new_df = pd.DataFrame({"id": [1, 3], "price": [11.11, 300.00]})
-    saver.save(new_df, "csv_dataset", mode="overwrite", replace_where="id == 1")
 
-    # Re-ingest the resulting consolidated matrix to verify idempotence and parity.
-    result_df = loader.load("csv_dataset")
+    with pytest.raises(UnsupportedBackendError, match="replace_where.*delta"):
+        saver.save(new_df, "csv_dataset", mode="overwrite", replace_where="id == 1")
 
-    assert len(result_df) == 3
-    assert 2 in result_df["id"].values  # Must be preserved intact.
-    assert 1 in result_df["id"].values  # Replaced.
-    assert 3 in result_df["id"].values  # Inserted.
-
-    price_id_2 = result_df[result_df["id"] == 2]["price"].iloc[0]
-    price_id_1 = result_df[result_df["id"] == 1]["price"].iloc[0]
-
-    assert price_id_2 == decimal.Decimal("150.50")
-    assert price_id_1 == decimal.Decimal("11.11")
+    assert target.read_bytes() == original
 
 
 def test_pandas_engine_delta_replace_where_native_mapping(
@@ -435,8 +423,6 @@ def test_pandas_engine_delta_replace_where_native_mapping(
 ) -> None:
     """Asserts that replace_where maps to native predicate dictionaries for Delta Lake handlers in Pandas."""
     pd = pytest.importorskip("pandas")
-    pytest.importorskip("deltalake")
-
     catalog_dir = tmp_path / "conf" / "catalog"
     catalog_dir.mkdir(parents=True, exist_ok=True)
     with open(tmp_path / "pyproject.toml", "w", encoding="utf-8") as f:

@@ -33,6 +33,7 @@ from flint_core.core.exceptions import (
     ColumnValidationError,
     UnsupportedBackendError,
 )
+from flint_core.core.io import _validate_replace_where
 from flint_core.spark_core.deduplication import SparkDeduplicationMixin
 from flint_core.spark_core.scd2 import SparkSCD2Mixin
 
@@ -255,6 +256,8 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
         spark: Optional[SparkSession] = None,
     ) -> None:
         """Saves a distributed Spark DataFrame with schema verification."""
+        replace_where = metadata.get("replace_where") if metadata else None
+        _validate_replace_where(replace_where, mode, data_format)
         session = spark if spark is not None else SparkSession.getActiveSession()
         if session is None or getattr(session, "_sc", None) is None:
             raise ValueError("No active distributed SparkSession could be resolved.")
@@ -263,8 +266,8 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
         handler = self._resolve_format_handler(data_format)
         writer = df.write.mode(mode)
 
-        if metadata and metadata.get("replace_where"):
-            writer = writer.option("replaceWhere", metadata["replace_where"])
+        if replace_where is not None:
+            writer = writer.option("replaceWhere", replace_where)
 
         if metadata and "options" in metadata:
             opts = metadata["options"]
