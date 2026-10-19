@@ -65,6 +65,44 @@ pip install flint-core
 
 ## 2. Workspace Layout Architecture
 
+### Initialization safety
+
+`flint init` checks its planned targets before generating files or starting package
+managers. Existing project manifests, virtual environments, generated samples, and
+configuration files are never overwritten. `requirements.txt` is reserved for the
+`venv` and `uv` strategies; `poetry.lock` is reserved for Poetry. Existing unrelated
+files and ordinary directories may remain in the destination.
+
+Environment and domain names must be single path components. Paths inside the
+resolved project root cannot traverse symlinks, including dangling output links.
+Files use exclusive creation so a collision after the initial check also fails
+without replacing another creator's output.
+
+If a step fails, cleanup includes that step's partial output. An in-memory journal
+records created resources and checks file identity and contents before deletion.
+Changed or replaced files, untracked environment files, and resources whose
+ownership cannot be verified are preserved with a warning. Directories are removed
+only when empty; cleanup never recursively deletes a directory by its name alone.
+
+The virtual environment is reserved before running external tools. `uv` installation
+explicitly selects its interpreter. The Poetry strategy creates a local environment
+using the running Python interpreter, then invokes Poetry with project-local settings
+and without inherited active-environment variables. It does not change global Poetry
+configuration or install into a caller's active environment.
+
+Custom scaffold steps should use `context.make_directory()` and `context.write_text()`
+for tracked creation and preserve ownership in their own rollback callbacks. Appending
+a path to the legacy `created_paths` list alone is not proof of ownership. Custom
+callbacks and environment providers remain trusted code.
+
+Use one initializer at a time for a destination. Provider output inside the newly
+reserved environment is treated as part of that initialization; unrelated concurrent
+writes during provider commands are not supported. The journal is not persistent,
+and abrupt process termination, tool caches, or other external effects are outside
+its recovery guarantees. Review any preserved resources reported after a failure.
+
+### Layout selection
+
 The wizard prompts you for project metadata with smart fallbacks and displays
 an interactive menu to choose your architectural layout paradigm using simplified
 numeric selections (1-7):
