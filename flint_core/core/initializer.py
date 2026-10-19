@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Protocol, Type, Union, cast, runtime_checkable
 
+import yaml
+
 from flint_core.core.exceptions import ProjectInitializationError
 
 logger = logging.getLogger(__name__)
@@ -649,8 +651,10 @@ class SampleCatalogStep:
             content = contract_content
         else:
             content = generic_content
+        sample_name, sample_body = next(iter(yaml.safe_load(textwrap.dedent(content)).items()))
         for path in self.target_paths(context):
-            self._write_file(path, content, context)
+            dataset_name = sample_name if pattern == "default" else f"{path.parent.name}.{sample_name}"
+            self._write_file(path, yaml.safe_dump({dataset_name: sample_body}, sort_keys=False), context)
 
     def rollback(self, context: ScaffoldContext) -> None:
         """Flushes generated catalog files safely during cleanup maneuvers."""

@@ -59,8 +59,46 @@ gold_orders_summary:
 
 ```
 
-If the declarative syntax lacks any required structural fields or defines a corrupt type,
-`flint` throws a `CatalogParseError` during the initial tree-walking discovery phase.
+Invalid YAML, duplicate declarations, and invalid dataset model fields raise
+`CatalogParseError` during catalog loading. The legacy missing-required-field
+check still raises `KeyError`.
+
+### Identity and Reload Safety
+
+- Dataset IDs must be non-empty strings, unique across the entire selected catalog.
+  Directory names do not implicitly namespace IDs. Repeating an ID in two files
+  fails with both full file paths and declaration locations.
+- Duplicate YAML keys are rejected at every nesting level, including hidden
+  declarations whose names start with `.`. Diagnostics identify both locations
+  without printing the duplicate values.
+- YAML anchors and merges remain supported only when their effective keys do not
+  collide. Explicitly overriding an inherited key, overlapping merge sources, or
+  repeating `<<` fails instead of choosing a winner. Replace an overriding merge
+  with a complete, unambiguous declaration before upgrading.
+- Reload compiles a separate candidate in sorted file-path order while holding the
+  catalog lock. Only a completely successful candidate replaces the current map.
+  Parsing, validation, directory-discovery, or read failures propagate to the caller
+  and leave the old configurations intact. Callers must handle the failure; Flint does not
+  automatically retry or execute against the retained catalog.
+- Missing paths and unsupported explicit file extensions fail. An existing empty
+  directory, an empty YAML document, or `{}` intentionally represents an empty
+  catalog. Non-mapping roots and non-mapping dataset definitions are errors.
+- Fluent access such as `catalog.orders` is instance-scoped. Removed IDs no longer
+  resolve after a successful reload. IDs colliding with API attributes, and IDs
+  containing dots, remain available through `catalog["dataset_id"]`.
+
+New scaffolds retain `sample_table` in the default layout. Layered layouts write
+explicit IDs such as `bronze.sample_table`; domain layouts use IDs such as
+`finance.domain_dataset`. Existing generated manifests are not rewritten:
+rename their colliding IDs and update their consumers before loading them.
+
+This is a safety patch for the legacy manifest format, not the proposed versioned
+logical-definition/binding model. Environment-variable and Spark-settings files
+retain their existing parsers and overlay rules. Reload does not refresh cached
+environment variables or change the project root. Dataset objects remain mutable;
+retained external references are not invalidated. The lock protects publication
+within one catalog instance, not concurrent edits to source files or a multi-file
+filesystem snapshot.
 
 ---
 

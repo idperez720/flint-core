@@ -13,11 +13,11 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
-from flint_core.core.catalog.descriptors import DatasetDescriptor
 from flint_core.core.catalog.models import (
     ColumnDefinition,
     DatasetConfiguration,
 )
+from flint_core.core.catalog.yaml_loader import load_manifest, source_location
 from flint_core.core.exceptions import CatalogParseError
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,16 @@ class DataCatalog:
     def __getitem__(self, dataset_name: str) -> DatasetConfiguration:
         """Allows direct element lookup leveraging native catalog key accessors."""
         return self.get_dataset(dataset_name)
+
+    def __getattr__(self, dataset_name: str) -> DatasetConfiguration:
+        """Resolves fluent dataset access without mutating the catalog class."""
+        lock = self.__dict__.get("_lock")
+        if lock is not None:
+            with lock:
+                datasets = self.__dict__.get("_datasets", {})
+                if dataset_name in datasets:
+                    return datasets[dataset_name]
+        raise AttributeError(f"{type(self).__name__!s} has no attribute {dataset_name!r}.")
 
     def __contains__(self, dataset_name: str) -> bool:
         """Determines if a dataset identifier exists inside active tables."""
@@ -156,22 +166,14 @@ class DataCatalog:
             )
 
     def reload_catalog(self, path: Path) -> None:
-        """Flushes registers rebuilding the complete metadata catalog space."""
+        """Publishes a complete candidate only after every manifest succeeds."""
         with self._lock:
-            self._datasets.clear()
-            self._load_catalog_sources(path)
-            self._bind_dynamic_descriptors()
+            self._datasets = self._load_catalog_sources(Path(path).resolve())
 
     async def reload_catalog_async(self, path: Path) -> None:
         """Asynchronously triggers catalog reloading utilizing workers threads."""
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self.reload_catalog, path)
-
-    def _bind_dynamic_descriptors(self) -> None:
-        """Weaves runtime programmatic descriptive fluent property dot accessors."""
-        for name in self._datasets:
-            if not hasattr(self, name):
-                setattr(self.__class__, name, DatasetDescriptor(name))
 
     def _discover_catalog_path(self) -> Path:
         """Executes recursive parent directories tree-walking seeking project anchors."""
@@ -231,30 +233,67 @@ class DataCatalog:
             return [self._interpolate_payload(item) for item in data]
         return data
 
-    def _load_catalog_sources(self, path: Path) -> None:
+    def _load_catalog_sources(self, path: Path) -> Dict[str, DatasetConfiguration]:
         """Traverses target paths scanning valid structural YAML catalog files."""
-        if path.is_file() and path.suffix in (".yml", ".yaml"):
-            self._parse_file(path)
-            return
-        for file_path in path.rglob("*"):
-            if file_path.is_file() and file_path.suffix in (".yml", ".yaml"):
-                self._parse_file(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Target catalog path missing: {path}")
+        if path.is_file():
+            if path.suffix not in (".yml", ".yaml"):
+                raise CatalogParseError(f"Catalog manifest must use .yml or .yaml: {path}")
+            file_paths = [path]
+        elif path.is_dir():
 
-    def _parse_file(self, file_path: Path) -> None:
+            def fail_discovery(error: OSError) -> None:
+                raise error
+
+            file_paths = []
+            for directory, _, filenames in os.walk(path, onerror=fail_discovery):
+                for filename in filenames:
+                    file_path = Path(directory) / filename
+                    if file_path.suffix in (".yml", ".yaml"):
+                        if not file_path.is_file():
+                            raise CatalogParseError(f"Catalog manifest must be a regular file: {file_path}")
+                        file_paths.append(file_path)
+            file_paths.sort()
+        else:
+            raise CatalogParseError(f"Catalog path must be a file or directory: {path}")
+        datasets: Dict[str, DatasetConfiguration] = {}
+        declarations: Dict[str, yaml.Mark] = {}
+        for file_path in file_paths:
+            self._parse_file(file_path, datasets, declarations)
+        return datasets
+
+    def _parse_file(
+        self,
+        file_path: Path,
+        datasets: Dict[str, DatasetConfiguration],
+        declarations: Dict[str, yaml.Mark],
+    ) -> None:
         """Parses individual YAML target files compiling and interpolating configuration mappings."""
-        try:
-            with open(file_path, "r", encoding="utf-8") as stream:
-                content = yaml.safe_load(stream)
-        except yaml.YAMLError as e:
-            raise CatalogParseError(f"Syntax error inside target file '{file_path.name}': {e}") from e
+        content, locations = load_manifest(file_path)
+        if content is None:
+            return
+        if not isinstance(content, dict):
+            raise CatalogParseError(f"Catalog manifest must contain a mapping: {file_path}")
 
         if content and isinstance(content, dict):
             # Phase 3.5: Execute recursive interpolation across the compiled metadata pool
             content = self._interpolate_payload(content)
 
             for dataset_name, dataset_body in content.items():
-                if not isinstance(dataset_body, dict) or dataset_name.startswith("."):
+                if not isinstance(dataset_name, str) or not dataset_name:
+                    raise CatalogParseError(f"Dataset IDs must be non-empty strings: {file_path}")
+                if dataset_name.startswith("."):
                     continue
+                if not isinstance(dataset_body, dict):
+                    raise CatalogParseError(f"Dataset '{dataset_name}' must contain a mapping: {file_path}")
+                if dataset_name in declarations:
+                    raise CatalogParseError(
+                        f"Duplicate dataset ID {dataset_name!r}: "
+                        f"first declared at {source_location(declarations[dataset_name])}; "
+                        f"repeated at {source_location(locations[dataset_name])}."
+                    )
+                declarations[dataset_name] = locations[dataset_name]
                 engine = dataset_body.get("engine")
                 data_format = dataset_body.get("format")
                 storage_path = dataset_body.get("storage_path")
@@ -281,14 +320,13 @@ class DataCatalog:
                     for k, v in dataset_body.items()
                     if k not in ("columns", "engine", "format", "storage_path", "connector")
                 }
-                with self._lock:
-                    self._datasets[dataset_name] = DatasetConfiguration(
-                        name=dataset_name,
-                        engine=engine,
-                        data_format=data_format,
-                        storage_path=storage_path,
-                        columns=column_definitions,
-                        metadata=metadata_payload,
-                        connector=connector,
-                        catalog_ref=self,
-                    )
+                datasets[dataset_name] = DatasetConfiguration(
+                    name=dataset_name,
+                    engine=engine,
+                    data_format=data_format,
+                    storage_path=storage_path,
+                    columns=column_definitions,
+                    metadata=metadata_payload,
+                    connector=connector,
+                    catalog_ref=self,
+                )
