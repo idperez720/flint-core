@@ -6,11 +6,14 @@ The new `flint_core.core.catalog.v1.ManifestCatalog` reads versioned logical
 definitions and physical bindings as immutable metadata snapshots. Review the
 [minimum contract](catalog-v1.md) before adopting it.
 
-This is separate from the legacy `DataCatalog`: there is no format guessing,
-automatic rewrite, new CLI command, or wiring to the existing dataset readers
-and writers. Do not point a legacy catalog at versioned manifests or treat
-declaration validation as executed row/type/uniqueness checks. The initializer
-continues generating the legacy format until the executable-project milestone.
+This is separate from legacy `DataCatalog`: there is no format guessing or
+automatic rewrite. Do not point a legacy catalog at versioned manifests or treat
+declaration validation as executed row/type/uniqueness checks.
+
+The [versioned project workflow](project-workflow.md) executes these manifests
+through `FlintProject` and the shared CLI, with a dedicated strict local CSV
+adapter rather than permissive legacy I/O. Default initialization remains legacy;
+select `--format v1` for the new executable example.
 
 ## Unreleased — Utilities Removal
 

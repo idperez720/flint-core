@@ -52,6 +52,7 @@ nav:
   - User Guide:
       - Data Catalog & Environments: catalog.md
       - Catalog v1 (Opt-in): catalog-v1.md
+      - Minimum Project Workflow: project-workflow.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
       - Migration Notes: migration.md

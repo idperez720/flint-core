@@ -10,7 +10,9 @@ not finalized by this increment.
 
 The new entry point is `flint_core.core.catalog.v1.ManifestCatalog`. The existing
 `DataCatalog` API and generated legacy manifests remain separate and unchanged.
-There is no format guessing, automatic migration, or new CLI command yet.
+There is no format guessing or automatic migration. The separate
+[project workflow](project-workflow.md) provides the facade, CLI, and executable
+local CSV integration; this page covers the metadata reader itself.
 
 ## Logical Definitions
 
@@ -213,6 +215,7 @@ Limits are 1 MiB per file, 64 composed node levels, and 100,000 composed nodes.
 Malformed UTF-8, over-limit inputs, and unsupported YAML constructs fail closed.
 These limits do not make trusted project code a sandbox.
 
-No scheduler, Utilities, registry scanning, CLI runner, data conversion, row
-validation, or dataset writer is introduced here. The scaffold remains on the
-legacy format until the executable-project milestone.
+The metadata reader itself does not schedule runs, scan registries, convert data,
+check rows, or write datasets. Use the separate project workflow for execution.
+Default initialization remains legacy; `flint init --format v1` explicitly
+generates the new executable example. Utilities remain removed.

@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from flint_core.runtime.errors import DataValidationError, PublicationUncertain
+from flint_core.runtime.errors import DataValidationError, PublicationConflict, PublicationUncertain
 
 _INTEGER = re.compile(r"-?(?:0|[1-9][0-9]*)")
 _FLOAT = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
@@ -57,8 +57,12 @@ class LocalCsvAdapter:
             if data_type == "float64":
                 if dtype not in ("float64", "Float64") or not all(math.isfinite(value) for value in series.dropna()):
                     raise DataValidationError("Expected finite float64 values without coercion.")
-            if data_type == "string" and not all(isinstance(value, str) for value in series.dropna()):
-                raise DataValidationError("Expected string values without coercion.")
+            if data_type == "string":
+                string_dtype = isinstance(series.dtype, pandas.StringDtype) or pandas.api.types.is_object_dtype(
+                    series.dtype
+                )
+                if not string_dtype or not all(isinstance(value, str) for value in series.dropna()):
+                    raise DataValidationError("Expected string values without coercion.")
         for constraint in definition.constraints:
             if constraint.severity != "error" or owned.duplicated(subset=list(constraint.columns)).any():
                 raise DataValidationError("A declared uniqueness constraint failed.")
@@ -225,6 +229,6 @@ class LocalCsvAdapter:
             raise PublicationUncertain(cleanup_pending=pending) from None
         if failure is not None:
             if isinstance(failure, FileExistsError):
-                raise FileExistsError("The create target already exists.") from None
-            raise DataValidationError("CSV preparation failed before publication.") from None
+                raise PublicationConflict(cleanup_pending=pending) from None
+            raise DataValidationError("CSV preparation failed before publication.", cleanup_pending=pending) from None
         return PublicationReceipt(cleanup_pending=pending)

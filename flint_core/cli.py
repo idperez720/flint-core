@@ -74,7 +74,7 @@ def _prompt_extras_interactive() -> List[str]:
     Returns:
         A parsed collection of unique data platform components selected by numbers.
     """
-    options = ["spark", "pandas", "aws", "gcp", "s3", "snowflake"]
+    options = ["spark", "pandas", "aws", "gcp", "azure", "snowflake"]
     selected = [False] * len(options)
 
     while True:
@@ -129,6 +129,7 @@ entry_point.add_command(run)
 
 
 @entry_point.command(name="init")
+@click.option("--format", "project_format", type=click.Choice(["legacy", "v1"]), default="legacy")
 @click.option(
     "--path",
     "-p",
@@ -188,6 +189,7 @@ entry_point.add_command(run)
     help="Deactivates interactive prompts. Forces headless automation.",
 )
 def init(
+    project_format: str,
     path: str,
     name: Optional[str],
     version: Optional[str],
@@ -204,6 +206,24 @@ def init(
     Supports both highly intuitive interactive prompts setups and headless automation
     pipelines via direct flags execution.
     """
+    if project_format == "v1":
+        from flint_core.runtime.scaffold import create_project
+
+        if any(value is not None for value in (envs, pattern, manager, extras)):
+            raise click.UsageError("The v1 scaffold supports only dev/local CSV and does not install environments.")
+        try:
+            create_project(
+                path,
+                name=name,
+                version=version or "0.1.0",
+                description=description or "A minimal Flint project",
+                author=author or "Anonymous",
+            )
+        except Exception:
+            raise click.ClickException("Cannot generate the v1 project without replacing existing resources.") from None
+        click.echo("Created the v1 project. Install the tested wheel with the pandas extra; see README.md.")
+        return
+
     click.secho(
         "🚀 Welcome to the elite flint project initialization wizard!\n",
         fg="cyan",

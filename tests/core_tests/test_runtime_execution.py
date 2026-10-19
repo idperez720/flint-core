@@ -148,3 +148,66 @@ def test_bad_input_fails_before_transform(tmp_path):
         result = project.run()
     assert result.error_code == "data_validation_failed"
     publish.assert_not_called()
+
+
+def test_json_suppresses_trusted_factory_and_function_prints(tmp_path):
+    factory = FACTORY.replace("def transform(source):", 'print("private-factory-value")\ndef transform(source):')
+    factory = factory.replace("return source.assign", 'print("private-row-value")\n    return source.assign')
+    make_project(tmp_path, factory=factory)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/source.csv").write_text("id\n1\n", encoding="utf-8")
+    response = CliRunner().invoke(entry_point, ["run", "--project", str(tmp_path), "--json"])
+    assert response.exit_code == 0, response.output
+    assert json.loads(response.output)["status"] == "success"
+    assert "private" not in response.output
+
+
+def test_cli_uncertain_exit_code_is_distinct(tmp_path):
+    executable(tmp_path)
+    with patch.object(LocalCsvAdapter, "_sync_parent", side_effect=OSError("unknown durability")):
+        response = CliRunner().invoke(entry_point, ["run", "--project", str(tmp_path), "--json"])
+    assert response.exit_code == 3
+    assert json.loads(response.output)["status"] == "uncertain"
+
+
+def test_unbound_intermediate_is_used_without_disk_publication(tmp_path):
+    project = executable(tmp_path)
+    definitions = yaml.safe_load((tmp_path / "definitions.yaml").read_text())
+    definitions["datasets"]["intermediate"] = copy.deepcopy(definitions["datasets"]["result"])
+    (tmp_path / "definitions.yaml").write_text(yaml.safe_dump(definitions), encoding="utf-8")
+    project.catalog.reload()
+    project._pipelines = MappingProxyType(
+        {
+            "main": Pipeline(
+                "main",
+                [
+                    Node("first", lambda source: source, {"source": "source"}, Output("intermediate")),
+                    Node("second", lambda source: source, {"source": "intermediate"}, Output("result", WritePolicy())),
+                ],
+            )
+        }
+    )
+    read = LocalCsvAdapter.read
+    reads = []
+
+    def observe(adapter, snapshot, dataset):
+        reads.append(dataset)
+        return read(adapter, snapshot, dataset)
+
+    with patch.object(LocalCsvAdapter, "read", observe):
+        result = project.run()
+    assert result.success
+    assert reads == ["source"]
+    assert [item.dataset for item in result.publications] == ["result"]
+
+
+def test_uncertain_cleanup_is_reported_in_summary(tmp_path):
+    project = executable(tmp_path)
+    with (
+        patch.object(LocalCsvAdapter, "_sync_parent", side_effect=OSError("unknown durability")),
+        patch.object(LocalCsvAdapter, "_cleanup", return_value=True),
+    ):
+        result = project.run()
+    assert result.status == "uncertain"
+    assert result.cleanup_pending
+    assert result.to_dict()["cleanup_pending"]

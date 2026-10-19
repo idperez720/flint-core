@@ -40,6 +40,12 @@ See the [migration notes](docs/migration.md) before upgrading existing pipelines
 
 ## 📖 Complete Documentation
 
+The opt-in [minimum project workflow](docs/project-workflow.md) supports versioned
+Catalog manifests, explicit registration, full-plan compilation, and the same
+local CSV run from Python or `flint run`. Generate its executable example with
+`flint init --format v1`. This path supports atomic `create` only; it does not
+certify Spark/cloud runs. Existing APIs remain separate.
+
 For comprehensive guides, testing architecture deep-dives, and complete API references, visit our documentation site:
 👉 **[Flint Core Docs](https://flint-core.readthedocs.io/en/latest/)**
 

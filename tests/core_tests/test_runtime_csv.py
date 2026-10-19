@@ -1,6 +1,8 @@
 """Real CSV contract checking and atomic create evidence."""
 
 import os
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from unittest.mock import patch
 
 import pandas as pd
@@ -182,3 +184,58 @@ def test_cleanup_retains_replaced_staging_file(tmp_path):
     assert receipt.cleanup_pending
     assert next((tmp_path / "data").glob(".flint-*.tmp")).read_bytes() == b"foreign-content"
     assert adapter.read(snapshot, "result")["id"].tolist() == [1]
+
+
+def test_empty_typed_batch_is_still_a_valid_csv(tmp_path):
+    snapshot = typed_snapshot(tmp_path)
+    frame = typed_frame().iloc[:0]
+    adapter = LocalCsvAdapter()
+    adapter.publish(snapshot, "result", frame)
+    pd.testing.assert_frame_equal(adapter.read(snapshot, "result"), frame.reset_index(drop=True))
+
+
+def test_all_null_float_column_is_not_treated_as_a_string(tmp_path):
+    snapshot = typed_snapshot(tmp_path)
+    frame = typed_frame()
+    frame["text"] = pd.Series([float("nan")] * 4, dtype="float64")
+    with pytest.raises(DataValidationError):
+        LocalCsvAdapter().publish(snapshot, "result", frame)
+
+
+def test_two_actual_writers_have_exactly_one_create_winner(tmp_path):
+    snapshot = target(tmp_path)
+    barrier = Barrier(2)
+    link = os.link
+
+    def synchronize_link(stage, destination):
+        barrier.wait(timeout=5)
+        return link(stage, destination)
+
+    def writer(number):
+        try:
+            LocalCsvAdapter().publish(snapshot, "result", pd.DataFrame({"id": [number]}))
+            return "committed"
+        except FileExistsError:
+            return "conflict"
+
+    with patch("os.link", side_effect=synchronize_link), ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(writer, 1)
+        second = executor.submit(writer, 2)
+        assert sorted([first.result(timeout=10), second.result(timeout=10)]) == ["committed", "conflict"]
+    assert LocalCsvAdapter().read(snapshot, "result")["id"].tolist() in ([1], [2])
+    assert not list((tmp_path / "data").glob(".flint-*"))
+
+
+def test_link_error_after_effect_is_uncertain_not_retried(tmp_path):
+    snapshot = target(tmp_path)
+    link = os.link
+
+    def interrupted_link(stage, destination):
+        link(stage, destination)
+        raise OSError("uncertain system call result")
+
+    with patch("os.link", side_effect=interrupted_link) as publication:
+        with pytest.raises(PublicationUncertain):
+            LocalCsvAdapter().publish(snapshot, "result", pd.DataFrame({"id": [1]}))
+    assert publication.call_count == 1
+    assert LocalCsvAdapter().read(snapshot, "result")["id"].tolist() == [1]

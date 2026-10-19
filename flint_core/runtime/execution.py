@@ -26,6 +26,7 @@ class RunResult:
     publications: Tuple[Publication, ...]
     failed_node: Optional[str] = None
     error_code: Optional[str] = None
+    cleanup_pending: bool = False
 
     @property
     def success(self):
@@ -44,6 +45,7 @@ class RunResult:
             ],
             "failed_node": self.failed_node,
             "error_code": self.error_code,
+            "cleanup_pending": self.cleanup_pending,
         }
 
 
@@ -90,7 +92,15 @@ def execute(plan):
                     cache.pop(dataset, None)
             if not uses[output]:
                 cache.pop(output, None)
-        return RunResult(run_id, plan.pipeline, snapshot.environment, "success", tuple(completed), tuple(publications))
+        return RunResult(
+            run_id,
+            plan.pipeline,
+            snapshot.environment,
+            "success",
+            tuple(completed),
+            tuple(publications),
+            cleanup_pending=any(item.cleanup_pending for item in publications),
+        )
     except Exception as error:
         status = "uncertain" if isinstance(error, PublicationUncertain) else "failed"
         code = "publication_uncertain" if status == "uncertain" else phase + "_failed"
@@ -105,4 +115,5 @@ def execute(plan):
             tuple(publications),
             node.name if node is not None else None,
             code,
+            bool(getattr(error, "cleanup_pending", False)) or any(item.cleanup_pending for item in publications),
         )

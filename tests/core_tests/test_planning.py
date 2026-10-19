@@ -1,9 +1,11 @@
 """Complete-plan validation without dataset reads or transformations."""
 
+import copy
 from types import MappingProxyType
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 from flint_core import FlintProject, Node, Output, Pipeline, WritePolicy
 from flint_core.runtime.errors import PlanError
@@ -84,3 +86,44 @@ def test_explicit_publication_and_read_only_access(tmp_path):
     assert configured(tmp_path, [node]).compile().publications == ("result",)
     with pytest.raises(PlanError):
         configured(tmp_path, [Node("node", lambda: None, {}, Output("source", WritePolicy()))]).compile()
+
+
+def test_positional_only_and_optional_atomicity_are_rejected(tmp_path):
+    def positional(source, /):
+        return source
+
+    with pytest.raises(PlanError):
+        configured(tmp_path, [Node("node", positional, {"source": "source"}, Output("result"))]).compile()
+    node = Node("node", lambda: None, {}, Output("result", WritePolicy(atomicity="optional")))
+    with pytest.raises(PlanError):
+        configured(tmp_path, [node]).compile()
+
+
+def test_no_default_does_not_imply_run_all(tmp_path):
+    project = FlintProject.load(make_project(tmp_path, default=False))
+    with pytest.raises(PlanError):
+        project.compile()
+
+
+def test_newly_ready_node_keeps_priority_over_later_independent_node(tmp_path):
+    project = FlintProject.load(make_project(tmp_path))
+    manifest = tmp_path / "definitions.yaml"
+    definitions = yaml.safe_load(manifest.read_text())
+    for name in ("other.one", "other.two"):
+        definitions["datasets"][name] = copy.deepcopy(definitions["datasets"]["result"])
+    manifest.write_text(yaml.safe_dump(definitions), encoding="utf-8")
+    project.catalog.reload()
+    project._pipelines = MappingProxyType(
+        {
+            "main": Pipeline(
+                "main",
+                [
+                    Node("b", lambda source: source, {"source": "source"}, Output("result")),
+                    Node("c", lambda: None, {}, Output("other.one")),
+                    Node("a", lambda: None, {}, Output("source")),
+                    Node("d", lambda: None, {}, Output("other.two")),
+                ],
+            )
+        }
+    )
+    assert [node.name for node in project.compile().nodes] == ["c", "a", "b", "d"]

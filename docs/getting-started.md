@@ -1,5 +1,9 @@
 # 🏁 Getting Started
 
+This guide describes legacy initialization. For the versioned Catalog and shared
+Python/CLI runner, see the [minimum project workflow](project-workflow.md) and
+select `flint init --format v1`.
+
 This guide walks you through installing `flint-core` and setting up a fresh
 production-grade data engineering workspace from scratch.
 
