@@ -1,12 +1,13 @@
 """Sequential run-scoped execution with truthful publication outcomes."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Tuple
 from uuid import uuid4
 
 from flint_core.runtime.errors import DataValidationError, PublicationUncertain
 from flint_core.runtime.local_csv import LocalCsvAdapter
+from flint_core.runtime.local_delta import PandasDeltaAdapter, SparkDeltaAdapter
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +50,7 @@ class RunResult:
         }
 
 
-def execute(plan):
-    adapter = LocalCsvAdapter()
+def execute(plan, *, spark=None, spark_local=False):
     snapshot = plan.snapshot
     completed = []
     publications = []
@@ -58,28 +58,50 @@ def execute(plan):
     node = None
     phase = "preflight"
     cache = {}
+    frames = None
+    session = None
+    owns_session = False
+    cleanup_pending = False
     uses = Counter(dataset for step in plan.nodes for dataset in step.inputs.values())
     try:
+        if plan.engine == "spark":
+            from flint_core.runtime.spark import SparkFrames, open_session
+
+            session, owns_session = open_session(spark, local=spark_local)
+            frames = SparkFrames(session)
+            validator = frames
+        else:
+            from flint_core.runtime.frames import _pandas
+
+            _pandas()
+            validator = LocalCsvAdapter()
+        adapters = {"pandas.csv": LocalCsvAdapter(), "pandas.delta": PandasDeltaAdapter()}
+        if frames is not None:
+            adapters["spark.delta"] = SparkDeltaAdapter(frames)
         for dataset in plan.external_inputs:
-            adapter.preflight(snapshot, dataset)
+            adapters[snapshot.bindings[dataset].adapter].preflight(snapshot, dataset)
         for dataset in plan.publications:
-            adapter.preflight(snapshot, dataset, write=True)
+            adapters[snapshot.bindings[dataset].adapter].preflight(snapshot, dataset, write=True)
         for node in plan.nodes:
             phase = "read"
             arguments = {}
             for parameter, dataset in node.inputs.items():
                 if dataset not in cache:
-                    cache[dataset] = adapter.read(snapshot, dataset)
-                arguments[parameter] = cache[dataset].copy(deep=True)
+                    cache[dataset] = adapters[snapshot.bindings[dataset].adapter].read(snapshot, dataset)
+                arguments[parameter] = (
+                    frames.copy(cache[dataset]) if frames is not None else cache[dataset].copy(deep=True)
+                )
+            for parameter in node.resources:
+                arguments[parameter] = session
             phase = "transformation"
             raw_output = node.func(**arguments)
             phase = "validation"
             output = node.outputs.dataset
-            owned = adapter.validate(raw_output, snapshot.definitions[output])
+            owned = validator.validate(raw_output, snapshot.definitions[output])
             if node.outputs.write is not None:
                 phase = "publication"
                 try:
-                    receipt = adapter.publish(snapshot, output, owned)
+                    receipt = adapters[snapshot.bindings[output].adapter].publish(snapshot, output, owned)
                 except PublicationUncertain as error:
                     publications.append(Publication(output, "uncertain", error.cleanup_pending))
                     raise
@@ -89,10 +111,20 @@ def execute(plan):
             for dataset in node.inputs.values():
                 uses[dataset] -= 1
                 if not uses[dataset]:
-                    cache.pop(dataset, None)
+                    released = cache.pop(dataset, None)
+                    if frames is not None and released is not None:
+                        try:
+                            frames.release(released)
+                        except Exception:
+                            cleanup_pending = True
             if not uses[output]:
                 cache.pop(output, None)
-        return RunResult(
+                if frames is not None:
+                    try:
+                        frames.release(owned)
+                    except Exception:
+                        cleanup_pending = True
+        result = RunResult(
             run_id,
             plan.pipeline,
             snapshot.environment,
@@ -106,7 +138,7 @@ def execute(plan):
         code = "publication_uncertain" if status == "uncertain" else phase + "_failed"
         if isinstance(error, DataValidationError):
             code = "data_validation_failed"
-        return RunResult(
+        result = RunResult(
             run_id,
             plan.pipeline,
             snapshot.environment,
@@ -117,3 +149,12 @@ def execute(plan):
             code,
             bool(getattr(error, "cleanup_pending", False)) or any(item.cleanup_pending for item in publications),
         )
+    finally:
+        if frames is not None:
+            cleanup_pending = frames.close() or cleanup_pending
+        if owns_session:
+            try:
+                session.stop()
+            except Exception:
+                cleanup_pending = True
+    return replace(result, cleanup_pending=result.cleanup_pending or cleanup_pending)

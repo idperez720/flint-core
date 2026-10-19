@@ -58,6 +58,21 @@ def _bindings():
     }
 
 
+@pytest.fixture(autouse=True, params=["spark.delta", "pandas.delta", "pandas.csv"])
+def binding_contract(request, monkeypatch):
+    original = _bindings
+
+    def selected():
+        document = original()
+        if request.param != "pandas.csv":
+            binding = document["bindings"]["raw.customers"]
+            binding.update(adapter=request.param, format="delta")
+            binding["target"]["kind"] = "delta_table"
+        return document
+
+    monkeypatch.setattr(sys.modules[__name__], "_bindings", selected)
+
+
 def _write(path, document):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")

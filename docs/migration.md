@@ -1,5 +1,19 @@
 # Migration Notes
 
+## Unreleased — Spark and Delta in v1
+
+The opt-in versioned workflow now supports explicit `Pipeline(engine="spark")`,
+`Node.resources`, `project.run(spark=session)` or `spark_local=True`, and
+`spark.delta` / `pandas.delta` bindings with `target.kind: delta_table`.
+See the [Spark-first guide](spark-delta-v1.md). Existing Pandas/CSV defaults remain.
+
+Use `flint init --format v1 --engine spark` for the new executable example.
+Metadata/dry-run still require no engines. Real local Spark execution needs the
+`spark-delta` extra and Java 17; Pandas Delta uses `pandas,delta` with PyArrow now
+included by the Delta extra. No conversion, global session adoption, remote
+filesystem support, or implicit append/overwrite is introduced. All v1 writes
+remain explicit atomic `create`, regardless of legacy engine mode support.
+
 ## Opt-in Catalog v1
 
 The new `flint_core.core.catalog.v1.ManifestCatalog` reads versioned logical

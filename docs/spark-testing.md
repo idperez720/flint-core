@@ -1,9 +1,9 @@
 # Local Spark Regression Tests
 
 These checks exercise the **legacy Spark adapter** through `DataCatalog`,
-`DataLoader`, `DataSaver`, and `SparkEngine`. They do not add Spark support to the
-Draft [minimum project workflow](project-workflow.md), whose v1 bindings still
-support only local Pandas CSV.
+`DataLoader`, `DataSaver`, and `SparkEngine`. They are separate from the newer
+[Spark-first v1 workflow](spark-delta-v1.md), which now has explicit Spark/Delta
+bindings, session ownership, and its own strict create-only publication tests.
 
 ## Environment
 

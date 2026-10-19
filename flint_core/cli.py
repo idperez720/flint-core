@@ -131,6 +131,9 @@ entry_point.add_command(run)
 @entry_point.command(name="init")
 @click.option("--format", "project_format", type=click.Choice(["legacy", "v1"]), default="legacy")
 @click.option(
+    "--engine", type=click.Choice(["pandas", "spark"]), default=None, help="Execution engine for a v1 scaffold."
+)
+@click.option(
     "--path",
     "-p",
     type=click.Path(file_okay=False, dir_okay=True, writable=True),
@@ -190,6 +193,7 @@ entry_point.add_command(run)
 )
 def init(
     project_format: str,
+    engine: Optional[str],
     path: str,
     name: Optional[str],
     version: Optional[str],
@@ -210,7 +214,9 @@ def init(
         from flint_core.runtime.scaffold import create_project
 
         if any(value is not None for value in (envs, pattern, manager, extras)):
-            raise click.UsageError("The v1 scaffold supports only dev/local CSV and does not install environments.")
+            raise click.UsageError(
+                "The v1 scaffold supports only dev/local bindings and does not install environments."
+            )
         try:
             create_project(
                 path,
@@ -218,11 +224,14 @@ def init(
                 version=version or "0.1.0",
                 description=description or "A minimal Flint project",
                 author=author or "Anonymous",
+                engine=engine or "pandas",
             )
         except Exception:
             raise click.ClickException("Cannot generate the v1 project without replacing existing resources.") from None
-        click.echo("Created the v1 project. Install the tested wheel with the pandas extra; see README.md.")
+        click.echo("Created the v1 project. Install the tested branch wheel with the declared extra; see README.md.")
         return
+    if engine is not None:
+        raise click.UsageError("--engine applies only to --format v1.")
 
     click.secho(
         "🚀 Welcome to the elite flint project initialization wizard!\n",

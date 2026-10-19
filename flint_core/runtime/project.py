@@ -142,7 +142,7 @@ class FlintProject:
             self._plans[id(plan)] = plan
             return plan
 
-    def run(self, selection=None):
+    def run(self, selection=None, *, spark=None, spark_local=False):
         from flint_core.runtime.errors import PlanError
         from flint_core.runtime.execution import execute
         from flint_core.runtime.planning import ExecutionPlan
@@ -156,7 +156,9 @@ class FlintProject:
                 or plan.snapshot is not self.catalog.snapshot
             ):
                 raise PlanError("Plan does not belong to this project and current snapshot.")
-            return execute(plan)
+            if type(spark_local) is not bool or (plan.engine != "spark" and (spark is not None or spark_local)):
+                raise PlanError("Spark session options apply only to an explicitly Spark pipeline.")
+            return execute(plan, spark=spark, spark_local=spark_local)
 
     def close(self) -> None:
         with self._lock:

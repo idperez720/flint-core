@@ -3,8 +3,9 @@
 **Status: Draft — minimum subset implemented as an opt-in API.**
 
 The owner approved a small first implementation: `string`, `boolean`, `int64`,
-`float64`, local CSV bindings, strict declaration validation, and metadata loading
-without optional engines. This page records the implemented subset for review;
+`float64`, strict declaration validation, and metadata loading without optional
+engines. Local bindings now include `spark.delta`, `pandas.delta`, and `pandas.csv`.
+This page records the implemented subset for review;
 the wider Architecture RFC, project facade, runner, and publication protocol are
 not finalized by this increment.
 
@@ -12,7 +13,8 @@ The new entry point is `flint_core.core.catalog.v1.ManifestCatalog`. The existin
 `DataCatalog` API and generated legacy manifests remain separate and unchanged.
 There is no format guessing or automatic migration. The separate
 [project workflow](project-workflow.md) provides the facade, CLI, and executable
-local CSV integration; this page covers the metadata reader itself.
+local CSV/Delta integration; the [Spark-first guide](spark-delta-v1.md) covers
+explicit sessions and execution. This page covers the metadata reader itself.
 
 ## Logical Definitions
 
@@ -102,13 +104,17 @@ bindings:
 ```
 
 Every binding requires `adapter`, `format`, `target`, and `access`.
-The only currently accepted combination is `pandas.csv` / `csv` with
-`target.kind: file`. `access` is `read_only` or `read_write`. `options` is
-optional and defaults to an empty mapping; any advanced option is rejected.
+Accepted combinations are `pandas.csv` / `csv` with `target.kind: file`, and
+`spark.delta` or `pandas.delta` / `delta` with `target.kind: delta_table`.
+The latter is a local table directory, not a remote catalog identifier.
+`access` is `read_only` or `read_write`. `options` defaults to an empty mapping.
+CSV accepts no options. Delta additionally permits `version: 0` (or another
+non-negative YAML integer), only for read-only bindings. Strings, booleans,
+negative versions, timestamps, and provider-specific controls are rejected.
 
-This is a supported **binding declaration**, not adapter execution or a certified
-writer. The binding contains no write mode. Persistence remains an explicit
-future output policy; `read_write` is not permission to write automatically.
+Loading a **binding declaration** is not adapter execution or writer certification.
+The binding contains no write mode. Persistence requires an explicit runtime
+output policy; `read_write` is not permission to write automatically.
 
 File paths must be non-blank, forward-slash-separated, and project-relative.
 Absolute paths, URIs, backslashes, colons, control characters, leading/trailing
@@ -118,7 +124,7 @@ checking, or resolving the dataset target.
 
 This lexical check is **not a symlink sandbox** or proof of target permissions.
 Runtime target checks and safe publication must address those separately.
-Remote locations, table/query targets, connections, credentials, and advanced
+Remote locations, catalog-table/query targets, connections, credentials, and advanced
 format options are deferred rather than accepted as unenforced configuration.
 
 ## Identity, Versions, and References
@@ -156,6 +162,8 @@ There is no process-environment fallback, command execution, expression
 evaluation, or recursive expansion. Unknown/malformed placeholders fail.
 The expanded path must still satisfy the relative-path rules. Interpolation
 in logical fields, descriptive metadata, or configuration keys is rejected.
+Delta bindings also reject `%`, `?`, and `#` anywhere in the resulting table path
+or project root, before native URI interpretation. CSV paths are unaffected.
 
 Variables are copied at construction. Reload reuses the same explicit variables
 and environment; create another catalog to change those inputs.

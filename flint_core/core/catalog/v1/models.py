@@ -58,11 +58,16 @@ class FileTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class DeltaTableTarget:
+    path: Path
+
+
+@dataclass(frozen=True, slots=True)
 class DatasetBinding:
     id: str
     adapter: str
     format: str
-    target: FileTarget
+    target: Union[FileTarget, DeltaTableTarget]
     access: str
     options: Mapping[str, Any]
     source: SourceLocation

@@ -1,6 +1,8 @@
 """Complete-plan validation without dataset reads or transformations."""
 
 import copy
+import sys
+from functools import partial
 from types import MappingProxyType
 from unittest.mock import Mock
 
@@ -11,6 +13,26 @@ from flint_core import FlintProject, Node, Output, Pipeline, WritePolicy
 from flint_core.runtime.errors import PlanError
 
 from .test_project import make_project
+
+
+@pytest.fixture(autouse=True, params=["spark", "pandas"])
+def planning_engine(request, monkeypatch):
+    original = make_project
+
+    def configured_project(root, **options):
+        result = original(root, **options)
+        if request.param == "spark":
+            path = root / "bindings.yaml"
+            data = yaml.safe_load(path.read_text())
+            for binding in data["bindings"].values():
+                binding.update(adapter="spark.delta", format="delta")
+                binding["target"]["kind"] = "delta_table"
+            path.write_text(yaml.safe_dump(data), encoding="utf-8")
+        return result
+
+    module = sys.modules[__name__]
+    monkeypatch.setattr(module, "make_project", configured_project)
+    monkeypatch.setattr(module, "Pipeline", partial(Pipeline, engine=request.param))
 
 
 def configured(root, nodes):

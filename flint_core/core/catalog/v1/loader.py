@@ -14,6 +14,7 @@ from flint_core.core.catalog.v1.models import (
     DatasetBinding,
     DatasetDefinition,
     DatasetSchema,
+    DeltaTableTarget,
     FieldPath,
     FileTarget,
     UniqueConstraint,
@@ -174,9 +175,9 @@ def _definition(document: Document, dataset_id: str, value: Any) -> DatasetDefin
     )
 
 
-def _target(document: Document, value: Any, field: FieldPath, root: Path, variables: Mapping[str, str]) -> FileTarget:
+def _target(document: Document, value: Any, field: FieldPath, root: Path, variables: Mapping[str, str], *, delta=False):
     data = _mapping(document, value, field, required=("kind", "path"))
-    _choice(document, data["kind"], field + ("kind",), ("file",))
+    _choice(document, data["kind"], field + ("kind",), ("delta_table",) if delta else ("file",))
     raw_path = data["path"]
     if not isinstance(raw_path, str) or not raw_path.strip():
         document.fail(field + ("path",), "Expected a non-empty project-relative file path.")
@@ -198,22 +199,33 @@ def _target(document: Document, value: Any, field: FieldPath, root: Path, variab
         or any(part in ("", ".", "..") for part in parts)
     ):
         document.fail(field + ("path",), "Expected a portable project-relative file path without traversal.")
-    return FileTarget(root.joinpath(*parts))
+    if delta and any(character in str(root / path) for character in ("%", "?", "#")):
+        document.fail(
+            field + ("path",), "Delta paths and project roots cannot contain ambiguous URI characters %, ?, or #."
+        )
+    target_type = DeltaTableTarget if delta else FileTarget
+    return target_type(root.joinpath(*parts))
 
 
 def _binding(document: Document, dataset_id: str, value: Any, root: Path, variables) -> DatasetBinding:
     field = ("bindings", dataset_id)
     _identifier(document, dataset_id, field)
     data = _mapping(document, value, field, required=("adapter", "format", "target", "access"), optional=("options",))
-    adapter = _choice(document, data["adapter"], field + ("adapter",), ("pandas.csv",))
-    data_format = _choice(document, data["format"], field + ("format",), ("csv",))
+    adapter = _choice(document, data["adapter"], field + ("adapter",), ("pandas.csv", "pandas.delta", "spark.delta"))
+    delta = adapter.endswith(".delta")
+    data_format = _choice(document, data["format"], field + ("format",), ("delta",) if delta else ("csv",))
     access = _choice(document, data["access"], field + ("access",), ("read_only", "read_write"))
-    options = _mapping(document, data.get("options", {}), field + ("options",))
+    options = _mapping(document, data.get("options", {}), field + ("options",), optional=("version",) if delta else ())
+    if "version" in options:
+        if type(options["version"]) is not int or options["version"] < 0:
+            document.fail(field + ("options", "version"), "Expected a non-negative integer Delta version.")
+        if access != "read_only":
+            document.fail(field + ("options", "version"), "A historical binding must be read_only.")
     return DatasetBinding(
         dataset_id,
         adapter,
         data_format,
-        _target(document, data["target"], field + ("target",), root, variables),
+        _target(document, data["target"], field + ("target",), root, variables, delta=delta),
         access,
         MappingProxyType(options.copy()),
         document.source(field),

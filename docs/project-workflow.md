@@ -1,10 +1,14 @@
 # Minimum Safe Project Workflow
 
-**Draft API — implemented for local canonical CSV on POSIX.**
+**Draft API — implemented for local canonical CSV and Delta on supported POSIX filesystems.**
 
 The opt-in Runtime/Catalog workflow is separate from legacy `DataCatalog` and
 `flint_core.core.pipeline`. It adds no Utilities, scheduler, distributed
-execution, Spark runs, or cloud publication. The wider Architecture RFC stays Draft.
+graph execution or cloud publication. The wider Architecture RFC stays Draft.
+For the first-class Spark engine, explicit resources/session ownership, atomic
+Delta creation, and SAFE/CORE coverage, start with the
+[Spark-first Delta workflow](spark-delta-v1.md). This page retains the minimal
+Pandas/CSV example; `pandas.delta` is also a supported binding.
 
 ## Generate and Run
 
@@ -68,8 +72,9 @@ mutation, shared active project, global pipeline registry, or cross-run dataset
 cache is used. External imports retain normal Python behavior. Factory and
 transformation code is trusted, not sandboxed.
 
-`close()` removes only the owned module namespace. The local adapter does not
-accept or own external sessions/connections; those integrations remain deferred.
+`close()` removes only the owned module namespace. Spark sessions are explicitly
+borrowed per run with `run(spark=session)` or created/closed with
+`run(spark_local=True)`; closing a project never stops a borrowed session.
 Reloading project code requires a fresh project load.
 
 ## Functions, Compilation, and Explicit Persistence
@@ -106,7 +111,8 @@ with FlintProject.load("/work/customers-project", environment="dev") as project:
 Partial node/tag selection is not supported.
 
 Inputs explicitly map parameter names to logical IDs; two arguments may consume
-the same ID. Each node returns one Pandas DataFrame. An `Output` without `write`
+the same ID. Each node returns one DataFrame in its pipeline's explicit engine
+(`pandas` by default, or `spark`). No conversion is implicit. An `Output` without `write`
 remains run-scoped even when it has a binding. Unbound intermediates are valid;
 external inputs and persisted outputs require appropriate bindings.
 
@@ -128,8 +134,9 @@ catalog reload requires compiling a new plan.
 ## Executed Data Contract and CSV Codec
 
 External inputs are fully read/validated before consumption. Output frames are
-copied and checked before downstream consumption/publication. Consumers receive
-separate copies; run-private frames are released after their final consumer.
+copied and checked before downstream consumption/publication. Pandas consumers
+receive separate copies; Spark uses eagerly materialized, owned checkpoints and
+distinct DataFrame objects. Run-private frames are released after their final consumer.
 
 - `int64`: numpy/Pandas `int64` or nullable `Int64`.
 - `float64`: `float64`/`Float64`, with infinities rejected.
@@ -158,7 +165,7 @@ uniqueness is checked over the entire new table, not just an appended batch.
 
 ## Publication, Recovery, and Results
 
-The adapter requires POSIX, no-follow opens, same-filesystem hard links, and
+The CSV adapter requires POSIX, no-follow opens, same-filesystem hard links, and
 directory fsync. Output parents must already exist. Symlinked dataset components
 are rejected. It validates an owned frame, writes/fsyncs an exclusive stage,
 checks the path again, links it atomically to the absent final name, and fsyncs
@@ -174,6 +181,12 @@ editing of owned stages, arbitrary hostile filesystem races, crash/power-loss
 certification, remote storage, and multi-output transactions are not guaranteed.
 Only concurrent final-name creation is certified. No persistent recovery journal
 is introduced.
+
+Delta creates a complete native table in an owned sibling directory, verifies
+relative data references, fsyncs its contents, and publishes via exclusive
+directory rename rather than hard links. Its full contract and platform limits
+are in the [Spark/Delta guide](spark-delta-v1.md). The same structured outcomes
+apply to Spark and Pandas, including retained committed/uncertain outputs.
 
 `RunResult` exposes only run/pipeline/environment IDs, status, completed nodes,
 publication states, failing node/error category, and cleanup flags. It excludes

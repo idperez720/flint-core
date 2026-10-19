@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from flint_core.core.catalog.v1 import CatalogSnapshot
+from flint_core.core.catalog.v1.models import DeltaTableTarget, FileTarget
 from flint_core.core.exceptions import CatalogParseError
 from flint_core.runtime.errors import PlanError
 from flint_core.runtime.models import Node, Output, WritePolicy
@@ -16,6 +17,7 @@ class ExecutionPlan:
     project_id: str
     snapshot: CatalogSnapshot
     pipeline: str
+    engine: str
     nodes: Tuple[Node, ...]
     external_inputs: Tuple[str, ...]
     publications: Tuple[str, ...]
@@ -23,6 +25,7 @@ class ExecutionPlan:
     def to_dict(self):
         return {
             "pipeline": self.pipeline,
+            "engine": self.engine,
             "environment": self.snapshot.environment,
             "nodes": [node.name for node in self.nodes],
             "external_inputs": list(self.external_inputs),
@@ -35,6 +38,8 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
     if not isinstance(name, str) or not name or name not in project.pipelines:
         raise PlanError("Select exactly one registered pipeline, or configure default_pipeline.")
     pipeline = project.pipelines[name]
+    if pipeline.engine not in ("pandas", "spark"):
+        raise PlanError("Pipeline engine must be explicitly pandas or spark.")
     if not pipeline.nodes:
         raise PlanError("A pipeline must contain at least one node.")
     snapshot = project.catalog.snapshot
@@ -60,6 +65,11 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
         for parameter, dataset in node.inputs.items():
             if not isinstance(parameter, str) or not isinstance(dataset, str) or dataset not in snapshot.definitions:
                 raise PlanError("Input mappings must reference declared logical datasets.")
+        if set(node.resources) & set(node.inputs) or any(
+            not isinstance(parameter, str) or resource != "spark" or pipeline.engine != "spark"
+            for parameter, resource in node.resources.items()
+        ):
+            raise PlanError("Resources must map distinct parameters to the pipeline's explicit Spark session.")
         try:
             signature = inspect.signature(node.func)
             if any(
@@ -67,7 +77,7 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
                 for parameter in signature.parameters.values()
             ):
                 raise PlanError("Positional-only and variadic signatures are not supported.")
-            signature.bind(**dict.fromkeys(node.inputs, object()))
+            signature.bind(**dict.fromkeys((*node.inputs, *node.resources), object()))
         except (TypeError, ValueError):
             raise PlanError("Node inputs do not bind the transformation signature.") from None
         policy = node.outputs.write
@@ -78,10 +88,12 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
                 binding = snapshot.require_binding(output, access="write")
             except CatalogParseError:
                 raise PlanError("A persisted output requires a writable binding.") from None
-            if binding.adapter != "pandas.csv" or binding.format != "csv" or binding.options:
-                raise PlanError("Unsupported write capability.")
-            if binding.target.path in destinations:
-                raise PlanError("Multiple outputs cannot publish to the same physical target.")
+            _binding_capability(binding, pipeline.engine, write=True)
+            if any(
+                binding.target.path.is_relative_to(path) or path.is_relative_to(binding.target.path)
+                for path in destinations
+            ):
+                raise PlanError("Publication targets cannot coincide or overlap.")
             destinations.add(binding.target.path)
     dependencies = []
     consumers = [set() for node in pipeline.nodes]
@@ -97,8 +109,12 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
                     binding = snapshot.require_binding(dataset)
                 except CatalogParseError:
                     raise PlanError("An external input requires a readable binding.") from None
-                if binding.adapter != "pandas.csv" or binding.format != "csv" or binding.options:
-                    raise PlanError("Unsupported read capability.")
+                _binding_capability(binding, pipeline.engine)
+                if any(
+                    binding.target.path.is_relative_to(path) or path.is_relative_to(binding.target.path)
+                    for path in destinations
+                ):
+                    raise PlanError("External input and publication targets cannot overlap.")
                 external.append(dataset)
     ready = [index for index, degree in enumerate(dependencies) if degree == 0]
     heapq.heapify(ready)
@@ -116,7 +132,35 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
         project._namespace,
         snapshot,
         name,
+        pipeline.engine,
         tuple(ordered),
         tuple(external),
         tuple(node.outputs.dataset for node in ordered if node.outputs.write is not None),
     )
+
+
+def _binding_capability(binding, engine, *, write=False):
+    supported = {
+        "pandas.csv": ("pandas", "csv", FileTarget),
+        "pandas.delta": ("pandas", "delta", DeltaTableTarget),
+        "spark.delta": ("spark", "delta", DeltaTableTarget),
+    }
+    capability = supported.get(binding.adapter)
+    if (
+        capability is None
+        or capability[:2] != (engine, binding.format)
+        or not isinstance(binding.target, capability[2])
+    ):
+        raise PlanError("Binding and pipeline engine capabilities do not match; implicit conversions are forbidden.")
+    if binding.adapter == "pandas.csv" and binding.options:
+        raise PlanError("Unsupported CSV options.")
+    if binding.format == "delta":
+        if set(binding.options) - {"version"}:
+            raise PlanError("Unsupported Delta options.")
+        if "version" in binding.options and (
+            write
+            or type(binding.options["version"]) is not int
+            or binding.options["version"] < 0
+            or binding.access != "read_only"
+        ):
+            raise PlanError("Historical Delta versions require a read-only binding.")

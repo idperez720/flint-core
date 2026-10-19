@@ -53,6 +53,7 @@ nav:
       - Data Catalog & Environments: catalog.md
       - Catalog v1 (Opt-in): catalog-v1.md
       - Minimum Project Workflow: project-workflow.md
+      - Spark-First Delta Workflow v1: spark-delta-v1.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
       - Local Spark Testing: spark-testing.md

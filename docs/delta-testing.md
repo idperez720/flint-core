@@ -7,8 +7,10 @@ Delta has two distinct integration paths in the legacy API:
   configured Spark session. Installing Flint's `delta` extra does not configure
   Spark or install its Delta JARs.
 
-Neither path adds Delta bindings to the Draft v1 `FlintProject` workflow, which
-still supports only local Pandas CSV. The architecture RFC remains Draft.
+These original legacy checks are separate from the subsequent
+[Spark-first Delta v1 workflow](spark-delta-v1.md). That runtime now supports local
+`spark.delta` and `pandas.delta` bindings under its stricter create-only contract.
+The architecture RFC remains Draft; legacy mode tests do not enable v1 append/overwrite.
 
 ## Reproduce the Checks
 
@@ -88,9 +90,17 @@ Delta Spark 4.4.1 and PySpark 4.1.2. Existing Delta-related Pandas/delta-rs and
 validation checks also passed (33 targeted cases). These results do not establish
 support for every 4.x version or advanced feature combination.
 
-The complete local suite with `--spark-delta` reports **473 passed**, no skips or
-deselections (October 18, 2026). No engine implementation changes were needed for
-the tested combinations. This is source-checkout evidence, not release certification.
+The initial legacy checkpoint reported **473 passed**, no skips or deselections
+(October 18, 2026), before the v1 extension. No legacy engine changes were needed
+for those tested combinations. The v1 suite adds full-batch contracts, ownership,
+publication races, and actual Python/CLI/scaffold execution. Run it explicitly with:
+
+```sh
+.venv/bin/pytest tests/core_tests/test_v1_delta.py --spark-delta -q
+```
+
+Use the Java/Python environment shown above. This is source-checkout evidence,
+not a production certification or proof that hosted CI has run.
 
 These checks do not certify remote storage, Databricks/Unity Catalog, streaming,
 MERGE/SCD utilities, advanced table features, external orchestration, concurrent

@@ -33,15 +33,17 @@ def test_scaffold_validates_compiles_and_runs_via_both_entry_points(tmp_path):
     assert b" Alice " not in previous
 
 
-def test_generation_collisions_preserve_unrelated_files(tmp_path):
+@pytest.mark.parametrize("engine", ["spark", "pandas"])
+def test_generation_collisions_preserve_unrelated_files(tmp_path, engine):
     (tmp_path / "README.md").write_text("existing", encoding="utf-8")
     with pytest.raises(ProjectError):
-        create_project(tmp_path, name="example")
+        create_project(tmp_path, name="example", engine=engine)
     assert (tmp_path / "README.md").read_text() == "existing"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["README.md"]
 
 
-def test_partial_generation_rolls_back_only_owned_resources(tmp_path):
+@pytest.mark.parametrize("engine", ["spark", "pandas"])
+def test_partial_generation_rolls_back_only_owned_resources(tmp_path, engine):
     (tmp_path / "unrelated").write_bytes(b"preserve")
     write = ScaffoldContext.write_text
     created = []
@@ -54,14 +56,15 @@ def test_partial_generation_rolls_back_only_owned_resources(tmp_path):
 
     with patch.object(ScaffoldContext, "write_text", fail_after_write):
         with pytest.raises(ProjectError):
-            create_project(tmp_path, name="example")
+            create_project(tmp_path, name="example", engine=engine)
     assert sorted(path.name for path in tmp_path.iterdir()) == ["unrelated"]
     assert (tmp_path / "unrelated").read_bytes() == b"preserve"
 
 
-def test_new_scaffold_never_invokes_environment_commands(tmp_path):
+@pytest.mark.parametrize("engine", ["spark", "pandas"])
+def test_new_scaffold_never_invokes_environment_commands(tmp_path, engine):
     with patch("subprocess.run") as command:
-        create_project(tmp_path, name="example")
+        create_project(tmp_path, name="example", engine=engine)
     command.assert_not_called()
 
 
