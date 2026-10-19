@@ -55,6 +55,7 @@ nav:
       - Minimum Project Workflow: project-workflow.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
+      - Local Spark Testing: spark-testing.md
       - Migration Notes: migration.md
   - API Reference:
       - Data Catalog: api/catalog.md

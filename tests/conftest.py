@@ -9,28 +9,19 @@ import pytest
 
 @pytest.fixture(scope="function")
 def spark_session() -> Generator[Any, None, None]:
-    """Provides a resilient, isolated function-scoped PySpark active manager."""
-    from pyspark.sql import SparkSession
-
-    # Reset singletons safely via reflection to avoid Pylance stub warnings
-    if hasattr(SparkSession, "_activeSession"):
-        setattr(SparkSession, "_activeSession", None)
-    if hasattr(SparkSession, "_instantiatedContext"):
-        setattr(SparkSession, "_instantiatedContext", None)
+    """Provides a bounded local JVM session, stopped even after a test failure."""
+    SparkSession = pytest.importorskip("pyspark.sql").SparkSession
 
     spark = (
-        SparkSession.builder.master("local[*]")
+        SparkSession.builder.master("local[2]")
         .appName("FlintCoreTestContext")
         .config("spark.sql.shuffle.partitions", "1")
         .config("spark.ui.enabled", "false")
+        .config("spark.sql.session.timeZone", "UTC")
         .getOrCreate()
     )
 
-    yield spark
-
-    spark.stop()
-
-    if hasattr(SparkSession, "_activeSession"):
-        setattr(SparkSession, "_activeSession", None)
-    if hasattr(SparkSession, "_instantiatedContext"):
-        setattr(SparkSession, "_instantiatedContext", None)
+    try:
+        yield spark
+    finally:
+        spark.stop()

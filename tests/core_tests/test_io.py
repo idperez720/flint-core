@@ -225,10 +225,9 @@ def test_spark_engine_infrastructure_injection(mock_advanced_io_environment: Dat
     loader = DataLoader(catalog=mock_advanced_io_environment)
 
     with patch("pyspark.sql.DataFrameReader.parquet") as mock_reader:
-        try:
-            loader.load("spark_cloud_dataset", spark=spark_session)
-        except Exception:
-            pass
+        loaded = loader.load("spark_cloud_dataset", spark=spark_session)
+        assert loaded is mock_reader.return_value
+        mock_reader.assert_called_once_with("gcs://datacore/gold/orders/")
 
         gs_impl = spark_session.conf.get("spark.hadoop.fs.gs.impl")
         assert gs_impl == ("com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
@@ -354,11 +353,8 @@ def test_spark_jdbc_schema_qualified_table_routing(tmp_path: Path, spark_session
 
     # Intercept Spark internal API calls to evaluate routing correctness
     with patch("pyspark.sql.DataFrameReader.load") as mock_load, patch("pyspark.sql.SparkSession.table") as mock_table:
-        try:
-            loader.load("postgres_schema_table", spark=spark_session)
-        except Exception:
-            # Ignore secondary connection failures due to lack of an active database instance
-            pass
+        loaded = loader.load("postgres_schema_table", spark=spark_session)
+        assert loaded is mock_load.return_value
 
         # CRITICAL VALIDATIONS:
         # 1. It must not attempt to look up an internal Spark SQL catalog table
