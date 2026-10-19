@@ -2,6 +2,8 @@
 
 import logging
 
+from flint_core.runtime import FlintProject, Node, Output, Pipeline, WritePolicy
+
 __version__ = "0.3.3"
 
 logger = logging.getLogger(__name__)
@@ -22,4 +24,4 @@ except ImportError:
     logger.debug("Spark backend optional dependencies not found. Skipping auto-registration.")
 
 
-__all__: list[str] = []
+__all__ = ["FlintProject", "Node", "Output", "Pipeline", "WritePolicy"]
