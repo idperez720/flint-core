@@ -44,6 +44,23 @@ def _resolve_path(raw_path: str, project_root: Path) -> str:
     return str(file_path.resolve())
 
 
+def _validate_write_mode(mode: str) -> None:
+    """Requires a supported public mode rather than a backend-specific default."""
+    if not isinstance(mode, str) or mode not in ("error", "ignore", "append", "overwrite"):
+        raise ValueError("Write mode must be one of 'error', 'ignore', 'append', or 'overwrite'.")
+
+
+def _validate_write_options(options: Dict[str, Any]) -> None:
+    """Prevents provider options from overriding the declared write operation."""
+    reserved = {"mode", "if_exists", "append", "overwrite", "predicate", "replacewhere", "replace_where"}
+    conflicting = [key for key in options if str(key).lower() in reserved]
+    if conflicting:
+        raise ValueError(
+            f"Write options cannot override operation controls: {conflicting}. "
+            "Use 'mode' and 'replace_where' arguments."
+        )
+
+
 def _validate_replace_where(replace_where: Optional[str], mode: str, data_format: Optional[str] = None) -> None:
     """Rejects ambiguous or unsupported conditional writes before any I/O."""
     if replace_where is None:
@@ -152,6 +169,7 @@ class DataSaver:
             options: Runtime dictionary configuration writing overrides mapping.
             replace_where: Optional non-empty condition for native Delta replacement.
         """
+        _validate_write_mode(mode)
         _validate_replace_where(replace_where, mode)
 
         dataset = self.catalog.get_dataset(dataset_name)
@@ -173,6 +191,7 @@ class DataSaver:
         }
         combined_metadata["connector"] = dataset.connector
         combined_metadata["replace_where"] = replace_where
+        _validate_write_options(combined_metadata["options"])
 
         engine = EngineRegistry.get_engine(dataset.engine)
         engine.save(

@@ -90,7 +90,63 @@ saver.save(df, "gold_metrics", mode="overwrite")
 
 ### Operational Save Modes
 
-* **`"error"`** *(Default)*: Throws a `FileExistsError` if data is already present.
-* **`"overwrite"`**: Wipes the destination path entirely and writes fresh data.
-* **`"append"`**: Appends new rows to the existing files structure destination path.
-* **`"ignore"`**: Silently skips execution if files are already present at the target path.
+* **`"error"`** *(Default)*: Fails if the target already exists, without replacing it.
+* **`"overwrite"`**: Replaces the declared target with the supplied data.
+* **`"append"`**: Preserves existing rows and adds the supplied rows where supported.
+* **`"ignore"`**: Skips publication if the target already exists where supported.
+
+Unknown modes raise `ValueError`. Unsupported mode/backend combinations raise
+`UnsupportedBackendError` before writing. Provider options cannot set `mode`,
+`if_exists`, `append`, `overwrite`, `predicate`, or `replaceWhere`; use the public
+`mode` and `replace_where` arguments instead. This also applies to catalog options.
+
+### Pandas Write Capabilities
+
+| Target | Supported modes | Limits |
+|---|---|---|
+| Local CSV file | `error`, `ignore`, `overwrite`, `append` | Append requires matching column order, a header, no index, no compression, and UTF-8 encoding |
+| Local Parquet, JSON, ORC file | `error`, `ignore`, `overwrite` | Append and partitioned directory writes are rejected |
+| Remote CSV, Parquet, JSON, ORC | `overwrite` | Other modes are rejected because remote existence and safe append are not implemented |
+| Delta table | `error`, `ignore`, `overwrite`, `append` | Modes are passed to the native Delta writer |
+| SQLAlchemy relational/Databricks table, BigQuery | `error`, `overwrite`, `append` | Mapped to `fail`, `replace`, and `append`; `ignore` is rejected |
+| Pandas Iceberg and Snowflake | `append` | Other modes are rejected instead of silently appending |
+
+Custom Pandas handlers must declare `supported_write_modes`; an undeclared mode is
+rejected. Cloud and database capabilities still require the corresponding packages
+and backend configuration; the matrix describes dispatch behavior, not certification
+of every external integration.
+
+Local files are serialized into a temporary file in the same directory and then
+published. Serialization failure preserves the old destination. `error` and `ignore`
+use exclusive publication so a concurrently created file is not replaced. CSV append
+copies existing bytes, checks column order, writes only new records, and preserves
+a single header. This requires a full file copy and temporary disk space proportional
+to the existing file. A missing CSV target is created without replacing a racing writer.
+
+Local overwrite and append require one writer per target. Staging does not provide
+isolation against concurrent updates to an existing file, filesystem crash durability,
+or a transaction across outputs. Use a transactional backend when these guarantees
+are required. Compressed/local directory appends and unsupported remote modes must
+not be retried as overwrite.
+
+### Node Output Modes
+
+Legacy `Node` declarations still persist their declared destination outputs, but each
+output now defaults to `error`, so running a node cannot silently replace an existing
+dataset. Declare other modes per output:
+
+```python
+from flint_core.core.pipeline import Node
+
+node = Node(
+    name="load_customers",
+    func=load_customers,
+    inputs=[],
+    outputs=["raw.customers"],
+    write_modes={"raw.customers": "append"},
+)
+```
+
+Unknown output names or modes are rejected during node construction. This is a
+compatibility safety measure; the RFC's separate in-memory output model remains
+subject to implementation review. Multiple output publications remain independent.

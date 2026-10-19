@@ -5,6 +5,9 @@ from __future__ import annotations
 import abc
 import decimal
 import logging
+import os
+import shutil
+import tempfile
 import threading
 from pathlib import Path
 from typing import (
@@ -28,7 +31,7 @@ from flint_core.core.exceptions import (
     ColumnValidationError,
     UnsupportedBackendError,
 )
-from flint_core.core.io import _validate_replace_where
+from flint_core.core.io import _validate_replace_where, _validate_write_mode, _validate_write_options
 from flint_core.pandas_core.deduplication import PandasDeduplicationMixin
 from flint_core.pandas_core.scd2 import PandasSCD2Mixin
 
@@ -45,6 +48,7 @@ class PandasFormatHandler(abc.ABC):
 
     __slots__ = ()
     format_key: ClassVar[str] = ""
+    supported_write_modes: ClassVar[frozenset[str]] = frozenset()
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Automatically registers inheriting formats into global registry pools."""
@@ -229,9 +233,11 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
         spark: Optional[Any] = None,
     ) -> None:
         """Saves a local or cloud Pandas DataFrame executing strict validations."""
+        _validate_write_mode(mode)
         replace_where = metadata.get("replace_where") if metadata else None
         _validate_replace_where(replace_where, mode, data_format)
         options = dict(metadata.get("options", {})) if metadata else {}
+        _validate_write_options(options)
 
         if metadata and "infrastructure" in metadata:
             infra = metadata["infrastructure"]
@@ -243,41 +249,34 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
 
         handler = self._resolve_format_handler(data_format)
         fmt_clean = data_format.strip().lower()
+        if mode not in handler.supported_write_modes:
+            raise UnsupportedBackendError(f"Write mode '{mode}' is not supported for Pandas format '{data_format}'.")
 
-        if replace_where is not None:
-            options["predicate"] = replace_where
-            options["mode"] = "overwrite"
-
-        is_relational = fmt_clean in (
-            "postgres",
-            "postgresql",
-            "mysql",
-            "duckdb",
-            "sqlite",
-            "snowflake",
-            "bigquery",
-            "databricks",
+        is_file_format = isinstance(
+            handler, (CSVFormatHandler, ParquetFormatHandler, JSONFormatHandler, ORCFormatHandler)
         )
-        is_cloud = urlparse(path).scheme in (
-            "s3",
-            "s3a",
-            "s3n",
-            "gs",
-            "gcs",
-            "abfss",
-            "az",
-        )
+        is_remote = bool(urlparse(path).scheme) and not Path(path).drive
+        if is_file_format and is_remote and mode != "overwrite":
+            raise UnsupportedBackendError(f"Write mode '{mode}' is not supported for remote Pandas files.")
 
-        if not is_cloud and not is_relational:
+        if is_file_format and not is_remote:
             file_path = Path(path)
             if file_path.exists():
-                if mode == "error" and not replace_where:
+                if mode == "error":
                     raise FileExistsError(f"Target path already exists locally: '{path}'.")
                 if mode == "ignore":
                     return
+            if file_path.is_symlink() or (file_path.exists() and not file_path.is_file()):
+                raise UnsupportedBackendError("Local Pandas file writes require a regular file target.")
+            if options.get("partition_cols"):
+                raise UnsupportedBackendError("Partitioned local file writes are not supported by staged publication.")
 
-            if not file_path.parent.exists():
-                file_path.parent.mkdir(parents=True, exist_ok=True)
+        if replace_where is not None:
+            options["predicate"] = replace_where
+        if fmt_clean == "delta":
+            options["mode"] = mode
+        elif isinstance(handler, (RelationalDBFormatHandler, DatabricksFormatHandler, BigQueryFormatHandler)):
+            options["if_exists"] = {"error": "fail", "append": "append", "overwrite": "replace"}[mode]
 
         if not columns:
             df_enforced = df.copy()
@@ -298,7 +297,67 @@ class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.Data
             df_enforced = self._apply_primitive_dtypes(df_enforced, dtype_dict)
             df_enforced = self._enforce_rich_types(df_enforced, columns, parse_dates_fallback)
 
-        handler.write(df_enforced, path, options)
+        if is_file_format and not is_remote:
+            self._write_local_file(handler, df_enforced, Path(path), options, mode)
+        else:
+            handler.write(df_enforced, path, options)
+
+    def _write_local_file(
+        self, handler: PandasFormatHandler, df: pd.DataFrame, path: Path, options: Dict[str, Any], mode: str
+    ) -> None:
+        """Stages one local file and publishes only after serialization succeeds."""
+        existing = path.exists()
+        if mode == "append":
+            self._validate_csv_append(df, path, options)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.name}.", suffix="".join(path.suffixes), dir=path.parent
+        )
+        os.close(descriptor)
+        staged = Path(temporary_name)
+        try:
+            write_options = options.copy()
+            if mode == "append" and existing:
+                shutil.copyfile(path, staged)
+                with staged.open("rb+") as stream:
+                    stream.seek(-1, os.SEEK_END)
+                    if stream.read(1) not in (b"\n", b"\r"):
+                        stream.write((options.get("lineterminator") or "\n").encode("utf-8"))
+                write_options.update(mode="a", header=False)
+            handler.write(df, str(staged), write_options)
+            if existing:
+                shutil.copymode(path, staged)
+            if mode in ("error", "ignore") or (mode == "append" and not existing):
+                try:
+                    os.link(staged, path)
+                except FileExistsError:
+                    if mode != "ignore":
+                        raise
+            else:
+                os.replace(staged, path)
+        finally:
+            staged.unlink(missing_ok=True)
+
+    def _validate_csv_append(self, df: pd.DataFrame, path: Path, options: Dict[str, Any]) -> None:
+        """Restricts append to CSV layouts that preserve raw existing records."""
+        compression = options.get("compression", "infer")
+        compressed_suffixes = {".gz", ".bz2", ".zip", ".xz", ".zst", ".tar"}
+        if compression not in (None, "infer") or (
+            compression == "infer" and path.suffix.lower() in compressed_suffixes
+        ):
+            raise UnsupportedBackendError("CSV append does not support compression.")
+        if options.get("encoding", "utf-8") not in (None, "utf-8", "utf8"):
+            raise UnsupportedBackendError("CSV append requires UTF-8 encoding.")
+        if options.get("index", False) is not False or options.get("header", True) is not True:
+            raise UnsupportedBackendError("CSV append requires index=False and header=True.")
+        if options.get("columns") is not None:
+            raise UnsupportedBackendError("CSV append does not support a separate 'columns' option.")
+        if path.exists():
+            read_keys = {"sep", "encoding", "quotechar", "quoting", "doublequote", "escapechar", "lineterminator"}
+            read_options = {key: value for key, value in options.items() if key in read_keys}
+            existing_columns = pd.read_csv(path, nrows=0, **read_options).columns.tolist()
+            if existing_columns != [str(column) for column in df.columns]:
+                raise ValueError("CSV append columns must match the existing header in the same order.")
 
     def _apply_primitive_dtypes(self, df: pd.DataFrame, dtype_dict: Dict[str, Any]) -> pd.DataFrame:
         """Applies primitive data types safely onto an existing DataFrame."""
@@ -355,6 +414,7 @@ class CSVFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "csv"
+    supported_write_modes = frozenset({"error", "ignore", "overwrite", "append"})
 
     def read(
         self,
@@ -381,6 +441,7 @@ class ParquetFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "parquet"
+    supported_write_modes = frozenset({"error", "ignore", "overwrite"})
 
     def read(
         self,
@@ -400,6 +461,7 @@ class JSONFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "json"
+    supported_write_modes = frozenset({"error", "ignore", "overwrite"})
 
     def read(
         self,
@@ -423,6 +485,7 @@ class ORCFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "orc"
+    supported_write_modes = frozenset({"error", "ignore", "overwrite"})
 
     def read(
         self,
@@ -442,6 +505,7 @@ class DeltaFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "delta"
+    supported_write_modes = frozenset({"error", "ignore", "overwrite", "append"})
 
     def read(
         self,
@@ -469,7 +533,7 @@ class DeltaFormatHandler(PandasFormatHandler):
             raise UnsupportedBackendError("The 'deltalake' library is required to write delta format.") from e
 
         opts = options.copy()
-        mode = opts.pop("mode", "append")
+        mode = opts.pop("mode", "error")
         deltalake.write_deltalake(path, df, mode=mode, **opts)
 
 
@@ -478,6 +542,7 @@ class IcebergFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "iceberg"
+    supported_write_modes = frozenset({"append"})
 
     def read(
         self,
@@ -517,6 +582,7 @@ class RelationalDBFormatHandler(PandasDatabaseFormatHandler):
     """Symmetrical concrete database proxy routing mapped relational profiles."""
 
     __slots__ = ()
+    supported_write_modes = frozenset({"error", "append", "overwrite"})
 
     def read(
         self,
@@ -567,6 +633,7 @@ class DatabricksFormatHandler(PandasDatabaseFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "databricks"
+    supported_write_modes = frozenset({"error", "append", "overwrite"})
 
     def read(
         self,
@@ -621,6 +688,7 @@ class SnowflakeFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "snowflake"
+    supported_write_modes = frozenset({"append"})
 
     def read(
         self,
@@ -672,6 +740,7 @@ class BigQueryFormatHandler(PandasFormatHandler):
 
     __slots__ = ()
     format_key: ClassVar[str] = "bigquery"
+    supported_write_modes = frozenset({"error", "append", "overwrite"})
 
     def read(
         self,

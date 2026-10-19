@@ -104,7 +104,7 @@ def test_direct_engine_rejects_unsupported_conditional_writes(data_format: str, 
 def test_direct_engine_cannot_force_overwrite_for_delta(mode: str, tmp_path: Path) -> None:
     engine = PandasEngine()
     with patch.object(engine, "_resolve_format_handler") as resolve_handler:
-        with pytest.raises(ValueError, match="mode='overwrite'"):
+        with pytest.raises(ValueError, match="mode"):
             engine.save(
                 pd.DataFrame({"id": [1]}),
                 str(tmp_path / "delta"),
