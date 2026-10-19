@@ -7,6 +7,7 @@ from typing import ClassVar, Dict, List, Optional
 import click
 
 from flint_core.core.initializer import ProjectInitializationError, ProjectInitializer
+from flint_core.runtime.cli import run, validate
 
 # =============================================================================
 # METAPROGRAMMING REGISTRY FOR CLI EXTENSIBILITY
@@ -116,6 +117,10 @@ def _prompt_extras_interactive() -> List[str]:
 def entry_point() -> None:
     """flint - Highly versatile and extensible Data Engineering Experience CLI utilities."""
     pass
+
+
+entry_point.add_command(validate)
+entry_point.add_command(run)
 
 
 # =============================================================================

@@ -11,7 +11,7 @@ from flint_core.runtime.errors import PlanError
 from flint_core.runtime.models import Node, Output, WritePolicy
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class ExecutionPlan:
     project_id: str
     snapshot: CatalogSnapshot

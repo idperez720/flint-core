@@ -9,6 +9,7 @@ from threading import RLock
 from types import MappingProxyType, ModuleType
 from typing import Mapping, Optional, Union
 from uuid import uuid4
+from weakref import WeakValueDictionary
 
 from flint_core.core.catalog.v1 import ManifestCatalog
 from flint_core.core.exceptions import CatalogParseError
@@ -89,6 +90,7 @@ class FlintProject:
         self._pipelines = None
         self._closed = False
         self._lock = RLock()
+        self._plans = WeakValueDictionary()
 
     def _check_open(self) -> None:
         if self._closed:
@@ -136,11 +138,30 @@ class FlintProject:
 
         with self._lock:
             self._check_open()
-            return compile_plan(self, pipeline)
+            plan = compile_plan(self, pipeline)
+            self._plans[id(plan)] = plan
+            return plan
+
+    def run(self, selection=None):
+        from flint_core.runtime.errors import PlanError
+        from flint_core.runtime.execution import execute
+        from flint_core.runtime.planning import ExecutionPlan
+
+        with self._lock:
+            self._check_open()
+            plan = selection if isinstance(selection, ExecutionPlan) else self.compile(selection)
+            if (
+                self._plans.get(id(plan)) is not plan
+                or plan.project_id != self._namespace
+                or plan.snapshot is not self.catalog.snapshot
+            ):
+                raise PlanError("Plan does not belong to this project and current snapshot.")
+            return execute(plan)
 
     def close(self) -> None:
         with self._lock:
             self._closed = True
+            self._plans.clear()
             self._clear_modules()
 
     def __enter__(self):
