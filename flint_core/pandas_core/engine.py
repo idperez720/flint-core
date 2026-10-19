@@ -32,8 +32,6 @@ from flint_core.core.exceptions import (
     UnsupportedBackendError,
 )
 from flint_core.core.io import _validate_replace_where, _validate_write_mode, _validate_write_options
-from flint_core.pandas_core.deduplication import PandasDeduplicationMixin
-from flint_core.pandas_core.scd2 import PandasSCD2Mixin
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +126,14 @@ class PandasDatabaseFormatHandler(PandasFormatHandler, abc.ABC):
 # =============================================================================
 
 
-class PandasEngine(PandasDeduplicationMixin, PandasSCD2Mixin, BaseEngine[pd.DataFrame]):
+class PandasEngine(BaseEngine[pd.DataFrame]):
     """Unified Pandas engine orchestrating dynamic decoupled format strategies.
 
     Manages physical type casting enforcement, date parsing parameters, and
     provides side-effect strategy hooks for cloud databases.
     """
 
-    __slots__ = ()
+    __slots__ = ("__dict__",)
 
     PANDAS_TYPE_MAP: ClassVar[Dict[str, str]] = {
         "integer": "Int64",

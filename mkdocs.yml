@@ -53,6 +53,7 @@ nav:
       - Data Catalog & Environments: catalog.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
+      - Migration Notes: migration.md
   - API Reference:
       - Data Catalog: api/catalog.md
       - Data Loader (I/O): api/io.md

@@ -5,9 +5,9 @@ engineering pipelines in Python. It completely eliminates environmental friction
 distributed cluster management boilerplates, and fragile absolute storage path
 hardcoding.
 
-By combining declarative metadata workflows with agnostic functional transformation
-utilities, `flint` empowers data platforms to execute seamless computing workloads
-safely across both Pandas and PySpark architectures.
+Flint focuses on two pillars: Runtime for pipeline execution and Catalog for
+declarative dataset metadata. Its I/O adapters support Pandas and PySpark;
+transformations remain ordinary user-owned Python functions.
 
 ---
 
@@ -24,15 +24,16 @@ safely across both Pandas and PySpark architectures.
 * **Elastic Data Loading**: Load data matrices using Pandas or PySpark under the
   exact same interface. `flint` dynamically resolves filesystem boundaries
   and binds active Spark contexts automatically.
-* **Agnostic Functional Suite**: Run high-performance advanced features directly on your dataframes.
-  The core engine automatically resolves the appropriate optimization drivers via Inversion of
-  Control.
 * **Schema-Enforced Persistence Gates**: Secure storage paths via write validation
   checks that abort operations if the columns mismatch the catalog definition.
 
 ---
 
 ## 🚀 Next Steps
+
+Utilities are deferred. The next release intentionally removes the legacy SCD2
+and deduplication APIs, including their engine methods. Review the
+[migration notes](migration.md) before upgrading an existing pipeline.
 
 Ready to build your first standardized data platform workspace? Hop over to our
 step-by-step [Getting Started Guide](getting-started.md) to install the framework and

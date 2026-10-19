@@ -34,8 +34,6 @@ from flint_core.core.exceptions import (
     UnsupportedBackendError,
 )
 from flint_core.core.io import _validate_replace_where, _validate_write_mode, _validate_write_options
-from flint_core.spark_core.deduplication import SparkDeduplicationMixin
-from flint_core.spark_core.scd2 import SparkSCD2Mixin
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +91,14 @@ class SparkDatabaseFormatHandler(SparkFormatHandler, abc.ABC):
 # =============================================================================
 
 
-class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataFrame]):
+class SparkEngine(BaseEngine[SparkDataFrame]):
     """Enterprise PySpark engine orchestrating advanced multi-format schemas.
 
     Handles explicit struct field schema building, in-memory date schema string
     conversions fallbacks, and multi-cloud credential injections contexts.
     """
 
-    __slots__ = ()
+    __slots__ = ("__dict__",)
 
     SPARK_TYPE_MAP: ClassVar[Dict[str, DataType]] = {
         "string": StringType(),
