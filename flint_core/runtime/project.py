@@ -7,7 +7,7 @@ import tomllib
 from pathlib import Path
 from threading import RLock
 from types import MappingProxyType, ModuleType
-from typing import Mapping, Union
+from typing import Mapping, Optional, Union
 from uuid import uuid4
 
 from flint_core.core.catalog.v1 import ManifestCatalog
@@ -130,6 +130,13 @@ class FlintProject:
                     self._clear_modules()
                     raise ProjectError("Cannot load the explicit project pipeline factory.") from None
             return self._pipelines
+
+    def compile(self, pipeline: Optional[str] = None):
+        from flint_core.runtime.planning import compile_plan
+
+        with self._lock:
+            self._check_open()
+            return compile_plan(self, pipeline)
 
     def close(self) -> None:
         with self._lock:
