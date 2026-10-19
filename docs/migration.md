@@ -1,5 +1,17 @@
 # Migration Notes
 
+## Opt-in Catalog v1
+
+The new `flint_core.core.catalog.v1.ManifestCatalog` reads versioned logical
+definitions and physical bindings as immutable metadata snapshots. Review the
+[minimum contract](catalog-v1.md) before adopting it.
+
+This is separate from the legacy `DataCatalog`: there is no format guessing,
+automatic rewrite, new CLI command, or wiring to the existing dataset readers
+and writers. Do not point a legacy catalog at versioned manifests or treat
+declaration validation as executed row/type/uniqueness checks. The initializer
+continues generating the legacy format until the executable-project milestone.
+
 ## Unreleased — Utilities Removal
 
 Flint's current scope is Runtime, Catalog, and their I/O integration. Utilities

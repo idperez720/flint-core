@@ -51,6 +51,7 @@ nav:
   - Getting Started: getting-started.md
   - User Guide:
       - Data Catalog & Environments: catalog.md
+      - Catalog v1 (Opt-in): catalog-v1.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
       - Migration Notes: migration.md

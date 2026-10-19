@@ -1,0 +1,40 @@
+schema_version: 1
+kind: DatasetDefinitions
+datasets:
+  raw.customers:
+    description: Customer records from an application-owned source
+    schema:
+      extra_columns: forbid
+      columns:
+        id:
+          type: int64
+          nullable: false
+        name:
+          type: string
+          nullable: true
+        active:
+          type: boolean
+          nullable: false
+        score:
+          type: float64
+          nullable: true
+    constraints:
+      - id: unique_customer_id
+        type: unique
+        columns: [id]
+        severity: error
+    governance:
+      owner: data-engineering
+      domain: sales
+      classification: internal
+      tags: [customers]
+    metadata:
+      business_description: Demonstrates declarations, not executed data checks
+  intermediate.customer_ids:
+    description: An in-memory result does not require a physical binding
+    schema:
+      extra_columns: allow
+      columns:
+        id:
+          type: int64
+          nullable: false

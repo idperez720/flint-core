@@ -1,5 +1,10 @@
 # 🗺️ Data Catalog & Multi-Environment Isolation
 
+This guide describes the **legacy `DataCatalog` API**. The opt-in
+[Catalog v1 contract](catalog-v1.md) has separate logical definitions and physical
+bindings with strict metadata validation. The two formats are not interchangeable;
+the initializer and I/O integration remain on the legacy format for now.
+
 The `DataCatalog` is the central engine of `flint`. It enforces a strict
 "Convention over Configuration" layout to parse declarative dataset metadata,
 isolate environments, interpolate runtime tokens, and manage cascading session
