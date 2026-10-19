@@ -17,3 +17,7 @@ class DataValidationError(FlintError):
 
 class PublicationUncertain(FlintError):
     """Publication was attempted but its durable outcome is unknown."""
+
+    def __init__(self, *, cleanup_pending=False):
+        super().__init__("Publication outcome is uncertain; do not retry automatically.")
+        self.cleanup_pending = cleanup_pending
