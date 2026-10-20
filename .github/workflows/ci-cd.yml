@@ -58,10 +58,10 @@ jobs:
       - name: Run Ruff Code Formatter Check
         run: poetry run ruff format --check ./flint_core/
 
-      - name: Run Tests with Strict Coverage Gate (>= 60%)
+      - name: Run Tests with Strict Coverage Gate (>= 89.16%)
         env:
           SPARK_LOCAL_IP: 127.0.0.1
-        run: PYSPARK_PYTHON="$PWD/.venv/bin/python" poetry run pytest --spark-delta --cov=flint_core --cov-fail-under=60 --junitxml=test-results/safety-core-spark.xml
+        run: PYSPARK_PYTHON="$PWD/.venv/bin/python" poetry run pytest --spark-delta --cov=flint_core --cov-fail-under=89.16 --junitxml=test-results/safety-core-spark.xml
 
   release:
     name: Automated Semantic Release and PyPI Deploy
