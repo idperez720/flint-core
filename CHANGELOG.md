@@ -10,7 +10,7 @@
 - Add actionable, sanitized CLI diagnostics and plan error codes/context.
 - Correct version-pinned scaffold installation instructions and v1 getting started.
 - Restore missing API documentation and require strict site builds before release.
-- Enforce the 89.16% coverage baseline in CI.
+- Enforce the 89.16% coverage baseline in CI with correct fractional precision.
 
 Compatibility: CLI configuration/plan failures now have specific error categories;
 clients must allow additive `hint` and `plan_error` fields. Async/generator nodes

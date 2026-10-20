@@ -20,7 +20,8 @@ Prepared October 20, 2026. Publication is pending the gates in the
   getting-started guides, with explicit separation from legacy APIs.
 - Restored documentation API pages and the configured date plugin dependency;
   strict documentation builds now gate automated releases.
-- CI coverage gate raised from 60% to the established 89.16% baseline.
+- CI coverage gate raised from 60% to the established 89.16% baseline, with
+  two-decimal reporting/comparison and a fractional-threshold regression.
 
 ## Compatibility and migration
 

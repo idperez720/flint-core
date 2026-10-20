@@ -142,3 +142,6 @@ build_command = "poetry build"
 
 [tool.semantic_release.branches.main]
 match = "^main$"
+
+[tool.coverage.report]
+precision = 2

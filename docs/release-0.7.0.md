@@ -70,3 +70,13 @@ agreement are verified through the release test and distribution gates rather
 than assumed from classifiers. Missing documentation navigation targets were
 accidentally excluded by a generic Spark `.gitignore` entry; that entry is removed
 so the restored source pages are versioned.
+
+## Release-gate verification finding
+
+The first stricter Linux CI run measured 89.37% yet exited 1 because coverage.py
+compared the fractional 89.16 threshold using its default integer precision;
+pytest-cov's later summary said the gate was reached. Set report precision to two
+decimals. A real subprocess regression measures 25/28 statements (89.2857%),
+accepts the 89.16 baseline and rejects 89.30. The threshold is not lowered.
+The first local runs passed 773 tests per interpreter but skipped three SQLite
+checks and measured 89.04%; final environments include SQLite before rerunning.
