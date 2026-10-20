@@ -10,7 +10,9 @@ every pending ADR or certify cloud/Databricks execution.
 ## Generate and Run a Spark Project
 
 Use the unreleased wheel built from this branch, not the previously published
-package with the same `0.5.0` version. A new version must be selected before release.
+package with the same `0.5.0` version. The agreed next release is **0.6.0**;
+the source version will be updated by semantic-release during the authorized
+release. See the [release review](release-0.6.0.md).
 
 ```sh
 python -m venv .venv

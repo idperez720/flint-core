@@ -73,8 +73,10 @@ list must be non-empty, distinct, and reference columns declared
 
 These are **declarations, not executed checks**. The reader verifies their
 structure and references, but does not inspect records, enforce uniqueness, or
-certify CSV type interpretation. Those guarantees require the later data-validation
-and adapter milestone. Metadata loading must never report a rule as passed.
+certify CSV type interpretation. The implemented Runtime adapters perform those
+checks during execution; see the [project workflow](project-workflow.md) and
+[Spark-first guide](spark-delta-v1.md). Metadata loading must never report a rule
+as passed.
 
 `governance` accepts only `owner`, `domain`, `classification` (non-blank strings),
 and `tags` (a string list). `metadata` is a descriptive mapping of finite
@@ -137,8 +139,8 @@ format options are deferred rather than accepted as unenforced configuration.
   A definition without a binding is valid for an in-memory intermediate.
 - Environment identifiers use `[A-Za-z_][A-Za-z0-9_-]*`. Every selected bindings
   document must match the explicit environment. The reader does not consult
-  `FLINT_ENV`; checking a project's registered environment list belongs to the
-  later project loader.
+  `FLINT_ENV`; the separate `FlintProject` loader checks the project's registered
+  environment list.
 - Every selected file declares its version and kind. Wrong kinds, unknown fields,
   unsupported versions/types/rules, invalid references, and duplicate declarations
   fail with `CatalogParseError`. There is no legacy or permissive fallback.

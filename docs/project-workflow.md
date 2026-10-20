@@ -30,15 +30,19 @@ The first run creates `data/customers.csv`. The second fails and preserves its
 bytes. Archive/remove a disposable example output deliberately before repeating
 the demonstration; Flint never chooses overwrite for you.
 
-Default `flint init` remains legacy. `--format v1` generates only the minimal
-`dev`/local-CSV example. Legacy manager/pattern/environment/extras flags are
+Default `flint init` remains legacy. `--format v1` generates the minimal
+`dev`/local-CSV example; add `--engine spark` for the local Delta example.
+Legacy manager/pattern/environment/extras flags are
 rejected in this mode. Collisions and symlinks block generation; partial failure
 cleans only ownership-verified resources, preserving unrelated/changed content.
 
 These changes are **unreleased**. Source `__version__` now matches the existing
 distribution metadata, `0.5.0`; no release or version bump was made. Use the
 branch wheel, not the old published package with the same version. Select a new
-release version before publishing these breaking changes.
+release version before publishing these breaking changes. The agreed next
+release is now **0.6.0**; the [release review](release-0.6.0.md) describes the
+versioning checks and remaining merge gates. The source version is deliberately
+left for semantic-release to update during the authorized release.
 
 ## Project and Factory Contract
 
