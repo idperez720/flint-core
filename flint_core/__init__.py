@@ -4,7 +4,7 @@ import logging
 
 from flint_core.runtime import FlintProject, Node, Output, Pipeline, WritePolicy
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 logger = logging.getLogger(__name__)
 

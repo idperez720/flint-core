@@ -2,6 +2,65 @@
 
 <!-- version list -->
 
+## v0.6.0 (2026-10-20)
+
+### Bug Fixes
+
+- Enforce explicit write modes across nodes and pandas handlers
+  ([`bbbf16c`](https://github.com/idperez720/flint-core/commit/bbbf16cfaf69fcc3d9e1787be8ead73e16b7cefc))
+
+- Fail closed on unsupported conditional overwrites
+  ([`5184ec8`](https://github.com/idperez720/flint-core/commit/5184ec8c1acbaa955ba6b4974ed338c49cbbc0f6))
+
+- Preserve owned resources during initialization rollback
+  ([`adb2212`](https://github.com/idperez720/flint-core/commit/adb221290bf3e92ce878bb641b627ef6f1424f1b))
+
+- Reject duplicate catalog identities and preserve reload snapshots
+  ([`09e57b9`](https://github.com/idperez720/flint-core/commit/09e57b96f0522a31145ce91ec1d85358e5afc044))
+
+- Restore native Delta snapshot reads
+  ([`1206abb`](https://github.com/idperez720/flint-core/commit/1206abb49f01cf9de9c4c3af46b68733b00a23d3))
+
+- Synchronize pre-1.0 release versions and document 0.6.0 contracts
+  ([`c452c8a`](https://github.com/idperez720/flint-core/commit/c452c8a3bf282cd09fade6335ca37c161964cd37))
+
+### Features
+
+- Add Spark-first Delta execution and safety contracts to v1
+  ([`e222d65`](https://github.com/idperez720/flint-core/commit/e222d65363f713c2755b5b2f0e49ec0aa80be8d5))
+
+- Add strict versioned catalog metadata snapshots
+  ([`b95a075`](https://github.com/idperez720/flint-core/commit/b95a075dea151f4986adc2bbd2d1b29d24d41e90))
+
+- Compile complete sequential plans before dataset access
+  ([`bd4a856`](https://github.com/idperez720/flint-core/commit/bd4a856901c89c3bbe0c6403c5cde324bd840c1e))
+
+- Load isolated projects with explicit pipeline factories
+  ([`dee00ae`](https://github.com/idperez720/flint-core/commit/dee00ae21a8bd63c6f97a6eb296e44cbc1938340))
+
+- Share safe sequential execution across Python and CLI
+  ([`2635662`](https://github.com/idperez720/flint-core/commit/2635662fa12236c96cab19e565964143d010c44c))
+
+- Ship and certify the executable versioned project scaffold
+  ([`95f69e6`](https://github.com/idperez720/flint-core/commit/95f69e69fbb403b506da282d039da2ffdb9c0b7a))
+
+- Validate and atomically create canonical local CSV datasets
+  ([`a62352a`](https://github.com/idperez720/flint-core/commit/a62352ae63b9bf98d11a41b624e9ef8997fdadd4))
+
+### Refactoring
+
+- Remove deferred transformation utilities
+  ([`7ec8348`](https://github.com/idperez720/flint-core/commit/7ec83484faf40abe3973d9c4f17eff10ff22fbae))
+
+### Testing
+
+- Validate local Delta transactions and Spark compatibility
+  ([`8e1f661`](https://github.com/idperez720/flint-core/commit/8e1f661793595ced10e9b02812aa63f4f4ed41ed))
+
+- Validate native Spark writes with real local I/O
+  ([`8415de7`](https://github.com/idperez720/flint-core/commit/8415de72cff8ebbd4af31db9c7f8e4757f6cb70e))
+
+
 ## v0.5.0 (2026-07-10)
 
 ### Bug Fixes
