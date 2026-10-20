@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v0.7.0 (Unreleased)
+
+- Reject coroutine/generator transformations during full-graph compilation.
+- Export existing plan, result and typed error contracts from `flint_core.runtime`.
+- Decouple shared Pandas frame validation from CSV storage adapters.
+- Add actionable, sanitized CLI diagnostics and plan error codes/context.
+- Correct version-pinned scaffold installation instructions and v1 getting started.
+- Restore missing API documentation and require strict site builds before release.
+- Enforce the 89.16% coverage baseline in CI.
+
+Compatibility: CLI configuration/plan failures now have specific error categories;
+clients must allow additive `hint` and `plan_error` fields. Async/generator nodes
+must become synchronous DataFrame functions. Write policies, result statuses and
+exit codes are unchanged. API v1 remains Draft; local-only/create-only/type limits
+remain. See `docs/release-notes-0.7.0.md` for details.
+
+
 ## v0.6.0 (2026-10-20)
 
 ### Bug Fixes
