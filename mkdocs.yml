@@ -59,6 +59,7 @@ nav:
       - Local Spark Testing: spark-testing.md
       - Local Delta Testing: delta-testing.md
       - Migration Notes: migration.md
+      - 0.7.0 Release Notes: release-notes-0.7.0.md
       - 0.7.0 Release Review: release-0.7.0.md
       - Legacy Getting Started: legacy-getting-started.md
       - 0.6.0 Release Review: release-0.6.0.md
