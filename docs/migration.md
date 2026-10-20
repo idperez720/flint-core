@@ -1,8 +1,15 @@
 # Migration Notes
 
-## Planned 0.6.0 — Breaking Local Runtime/Catalog Milestone
+## 0.7.0 — Runtime API and developer workflow hardening
 
-The next package version is agreed as **0.6.0**, not 1.0.0. The opt-in v1 API and
+API v1 remains Draft. Synchronous DataFrame pipelines and write policies are
+unchanged. Async/generator transformations now fail at compilation. CLI
+configuration/plan failures use specific categories and safe additive hints.
+See the [Runtime migration contract](runtime-api.md#migration-from-060).
+
+## 0.6.0 — Breaking Local Runtime/Catalog Milestone
+
+Version **0.6.0** introduced the local Runtime/Catalog milestone. The opt-in v1 API and
 Architecture RFC remain Draft. A YAML `schema_version: 1` identifies the manifest
 format; it does not promise package/API stability or distributed execution.
 
@@ -15,7 +22,7 @@ transformations and use disposable outputs for the create-only examples.
 The [release review](release-0.6.0.md) records the implemented contract, supported
 platform boundary, versioning checks, and gates before merging/publishing.
 
-## Unreleased — Spark and Delta in v1
+## 0.6.0 — Spark and Delta in v1
 
 The opt-in versioned workflow now supports explicit `Pipeline(engine="spark")`,
 `Node.resources`, `project.run(spark=session)` or `spark_local=True`, and

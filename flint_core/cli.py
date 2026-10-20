@@ -228,7 +228,7 @@ def init(
             )
         except Exception:
             raise click.ClickException("Cannot generate the v1 project without replacing existing resources.") from None
-        click.echo("Created the v1 project. Install the tested branch wheel with the declared extra; see README.md.")
+        click.echo("Created the v1 project. Install the declared version and engine extra; see README.md.")
         return
     if engine is not None:
         raise click.UsageError("--engine applies only to --format v1.")

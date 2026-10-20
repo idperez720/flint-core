@@ -13,6 +13,7 @@ Status: implementation in progress; API v1 remains Draft. No publication claimed
 | Should Improve | `runtime/planning.py` merges unknown outputs and duplicate producers into one diagnostic; signature errors omit the affected node | Add typed plan codes and node/dataset context for Python callers; keep serialized CLI diagnostics sanitized |
 | Should Improve | `runtime/__init__.py` exports declarations but omits result, plan and error contracts returned by its facade | Export the existing contracts without exposing adapter implementations or adding a registry |
 | Should Improve | `runtime/scaffold.py` generated installation guides claim every version is unreleased, including a published version | Give version-pinned package installation and explicit local-wheel guidance |
+| Should Improve | `mkdocs.yml` references absent `docs/api/catalog.md` / `io.md` and a date plugin missing from `docs/requirements.txt` | Restore API pages, declare the configured plugin, and validate the documentation build |
 | Future | `runtime/planning.py:_binding_capability`, catalog v1 loader and execution adapter selection deliberately enumerate three certified local bindings | Document these boundaries and extension obligations; no speculative plugin framework or cloud adapters |
 | Future | `runtime/project.py` catches trusted factory errors and runtime results intentionally suppress raw backend exceptions | Keep summaries sanitized; a future opt-in diagnostic channel needs a separate privacy contract |
 
@@ -47,3 +48,24 @@ release; repository controls remain mandatory. API stability is a separate futur
 decision. Orchestration remains external: callers compile and run explicitly and
 map RunResult status, publications and cleanup flags to their own task lifecycle;
 uncertain publication must never be retried automatically.
+
+## Architecture and safety review boundaries
+
+The audit covered the Runtime facade, planning/execution, both frame validators,
+CSV and Delta adapters, exclusive directory publisher, strict Catalog v1 loader,
+legacy engine/I/O boundaries, scaffold ownership logic, existing regression
+suites, dependency metadata, semantic release configuration and CI. Existing
+regressions cover full-batch types/nullability/uniqueness, stale/forged plans,
+symlinks, concurrent creators, partial commits, failed durability checks,
+cleanup ownership and borrowed Spark sessions. No evidence justified replacing
+those mechanisms or introducing a new plugin framework.
+
+Reader/writer contracts deliberately reject unknown options, historical writes,
+engine conversion and unsupported targets. Logical schemas and physical bindings
+remain separated; catalog-only validation does not import trusted project code.
+Legacy cloud/database extras remain available for legacy I/O and are explicitly
+excluded from v1 certification. Python compatibility and package/import/version
+agreement are verified through the release test and distribution gates rather
+than assumed from classifiers. Missing documentation navigation targets were
+accidentally excluded by a generic Spark `.gitignore` entry; that entry is removed
+so the restored source pages are versioned.
