@@ -78,3 +78,12 @@ def test_package_and_advertised_metadata_versions_agree():
     except Exception:
         return
     assert installed == __version__
+
+
+@pytest.mark.parametrize("engine,extra", [("pandas", "pandas"), ("spark", "spark-delta")])
+def test_generated_install_instructions_match_version_and_engine(tmp_path, engine, extra):
+    create_project(tmp_path, name="example", engine=engine)
+    readme = (tmp_path / "README.md").read_text()
+    assert f'"flint-core[{extra}]=={__version__}"' in readme
+    assert "must be published" in readme
+    assert "These changes are unreleased" not in readme

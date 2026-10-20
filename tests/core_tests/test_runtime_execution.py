@@ -211,3 +211,58 @@ def test_uncertain_cleanup_is_reported_in_summary(tmp_path):
     assert result.status == "uncertain"
     assert result.cleanup_pending
     assert result.to_dict()["cleanup_pending"]
+
+
+def test_public_runtime_contracts_match_facade_results(tmp_path):
+    from flint_core.runtime import ExecutionPlan, Publication, RunResult
+    from flint_core.runtime import PlanError as PublicPlanError
+
+    project = executable(tmp_path)
+    plan = project.compile()
+    assert isinstance(plan, ExecutionPlan)
+    result = project.run(plan)
+    assert isinstance(result, RunResult)
+    assert isinstance(result.publications[0], Publication)
+    assert PublicPlanError is PlanError
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+def test_cli_configuration_failure_gives_safe_recovery_hint(tmp_path, json_output):
+    arguments = ["validate", "--project", str(tmp_path)] + (["--json"] if json_output else [])
+    response = CliRunner().invoke(entry_point, arguments)
+    assert response.exit_code == 2
+    assert "pyproject.toml" in response.output
+    if json_output:
+        summary = json.loads(response.output)
+        assert summary["error_code"] == "project_configuration_failed"
+        assert summary["hint"]
+
+
+def test_cli_plan_failure_has_actionable_code_without_raw_factory_text(tmp_path):
+    make_project(tmp_path, factory=FACTORY.replace("def transform(source):", "def transform(wrong):"))
+    response = CliRunner().invoke(entry_point, ["run", "--project", str(tmp_path), "--dry-run", "--json"])
+    summary = json.loads(response.output)
+    assert response.exit_code == 2
+    assert summary["error_code"] == "plan_failed"
+    assert summary["plan_error"] == "signature_mismatch"
+    assert "parameter names" in summary["hint"]
+    assert "wrong" not in response.output
+
+
+def test_cli_human_dry_run_shows_pipeline_and_order(tmp_path):
+    executable(tmp_path)
+    response = CliRunner().invoke(entry_point, ["run", "--project", str(tmp_path), "--dry-run"])
+    assert response.exit_code == 0
+    assert "planned:" in response.output
+    assert "double" in response.output
+    assert "main" in response.output
+
+
+def test_cli_does_not_serialize_custom_plan_error_codes_or_context(tmp_path):
+    executable(tmp_path)
+    error = PlanError("private-message", code="private-code", node="private-node", dataset="private-dataset")
+    with patch.object(FlintProject, "compile", side_effect=error):
+        response = CliRunner().invoke(entry_point, ["run", "--project", str(tmp_path), "--dry-run", "--json"])
+    assert response.exit_code == 2
+    assert json.loads(response.output)["plan_error"] == "invalid_plan"
+    assert "private" not in response.output

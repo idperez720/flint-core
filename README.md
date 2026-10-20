@@ -24,15 +24,16 @@ transformations remain ordinary user-owned Python functions.
   atomic create-only outputs on supported local filesystems.
 
 These are opt-in v1 contracts, not promises about the separate legacy APIs.
-The public v1 API and wider Architecture RFC remain Draft. The next agreed
-package version is **0.6.0**, not a stable 1.0 API; see the
-[release review](docs/release-0.6.0.md) for migration and merge gates.
+The public v1 API and wider Architecture RFC remain Draft in **0.7.0**. Start
+with the [getting-started guide](docs/getting-started.md), then consult the
+[Runtime API reference](docs/runtime-api.md) and
+[release review](docs/release-0.7.0.md).
 
 ---
 
 ## Utilities Removed
 
-The next release removes the legacy SCD2 and deduplication APIs and their Pandas
+Version 0.6.0 removed the legacy SCD2 and deduplication APIs and their Pandas
 and Spark implementations. Utilities are deferred, not part of the current core.
 This is an intentional breaking change; there are no compatibility shims.
 See the [migration notes](docs/migration.md) before upgrading existing pipelines.
