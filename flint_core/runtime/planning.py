@@ -3,6 +3,7 @@
 import heapq
 import inspect
 from dataclasses import dataclass
+from functools import partial
 from typing import Tuple
 
 from flint_core.core.catalog.v1 import CatalogSnapshot
@@ -36,7 +37,9 @@ class ExecutionPlan:
 def compile_plan(project, selection=None) -> ExecutionPlan:
     name = selection if selection is not None else project._default
     if not isinstance(name, str) or not name or name not in project.pipelines:
-        raise PlanError("Select exactly one registered pipeline, or configure default_pipeline.")
+        raise PlanError(
+            "Select exactly one registered pipeline, or configure default_pipeline.", code="pipeline_selection"
+        )
     pipeline = project.pipelines[name]
     if pipeline.engine not in ("pandas", "spark"):
         raise PlanError("Pipeline engine must be explicitly pandas or spark.")
@@ -57,11 +60,32 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
         if not isinstance(node.outputs, Output) or not isinstance(node.outputs.dataset, str):
             raise PlanError("Each node must declare exactly one Output.")
         output = node.outputs.dataset
-        if output not in snapshot.definitions or output in producers:
-            raise PlanError("Unknown output definition or duplicate dataset producer.")
+        if output not in snapshot.definitions:
+            raise PlanError(
+                "Output requires a declared logical dataset.", code="unknown_output", node=node.name, dataset=output
+            )
+        if output in producers:
+            raise PlanError(
+                "Each dataset can have only one producer.", code="duplicate_producer", node=node.name, dataset=output
+            )
         producers[output] = index
         if not callable(node.func):
             raise PlanError("Node transformation must be callable.")
+        transformation = node.func
+        # Classify partials of callable instances as well as ordinary functions.
+        while isinstance(transformation, partial):
+            transformation = transformation.func
+        if not inspect.isroutine(transformation):
+            transformation = transformation.__call__
+        if any(
+            check(transformation)
+            for check in (inspect.iscoroutinefunction, inspect.isasyncgenfunction, inspect.isgeneratorfunction)
+        ):
+            raise PlanError(
+                "Transformations must be synchronous functions returning one DataFrame.",
+                code="unsupported_callable",
+                node=node.name,
+            )
         for parameter, dataset in node.inputs.items():
             if not isinstance(parameter, str) or not isinstance(dataset, str) or dataset not in snapshot.definitions:
                 raise PlanError("Input mappings must reference declared logical datasets.")
@@ -79,7 +103,9 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
                 raise PlanError("Positional-only and variadic signatures are not supported.")
             signature.bind(**dict.fromkeys((*node.inputs, *node.resources), object()))
         except (TypeError, ValueError):
-            raise PlanError("Node inputs do not bind the transformation signature.") from None
+            raise PlanError(
+                "Node inputs do not bind the transformation signature.", code="signature_mismatch", node=node.name
+            ) from None
         policy = node.outputs.write
         if policy is not None:
             if not isinstance(policy, WritePolicy) or policy.mode != "create" or policy.atomicity != "required":
@@ -127,7 +153,7 @@ def compile_plan(project, selection=None) -> ExecutionPlan:
             if dependencies[consumer] == 0:
                 heapq.heappush(ready, consumer)
     if len(ordered) != len(pipeline.nodes):
-        raise PlanError("Pipeline graph contains a cycle.")
+        raise PlanError("Pipeline graph contains a cycle.", code="graph_cycle")
     return ExecutionPlan(
         project._namespace,
         snapshot,

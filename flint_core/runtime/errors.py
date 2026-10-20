@@ -8,7 +8,17 @@ class ProjectError(FlintError):
 
 
 class PlanError(FlintError):
-    """A complete pipeline cannot be compiled safely."""
+    """A complete pipeline cannot be compiled safely.
+
+    Context is available to Python callers; CLI summaries never echo arbitrary
+    project identifiers or exception messages.
+    """
+
+    def __init__(self, message: str, *, code: str = "invalid_plan", node=None, dataset=None):
+        super().__init__(message)
+        self.code = code
+        self.node = node
+        self.dataset = dataset
 
 
 class DataValidationError(FlintError):
