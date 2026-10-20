@@ -58,14 +58,29 @@ jobs:
       - name: Run Ruff Code Formatter Check
         run: poetry run ruff format --check ./flint_core/
 
-      - name: Run Tests with Strict Coverage Gate (>= 60%)
+      - name: Run Tests with Strict Coverage Gate (>= 89.16%)
         env:
           SPARK_LOCAL_IP: 127.0.0.1
-        run: PYSPARK_PYTHON="$PWD/.venv/bin/python" poetry run pytest --spark-delta --cov=flint_core --cov-fail-under=60 --junitxml=test-results/safety-core-spark.xml
+        run: PYSPARK_PYTHON="$PWD/.venv/bin/python" poetry run pytest --spark-delta --cov=flint_core --cov-fail-under=89.16 --junitxml=test-results/safety-core-spark.xml
+
+  documentation:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install documentation dependencies
+        run: python -m pip install . -r docs/requirements.txt
+      - name: Build documentation strictly
+        run: python -m mkdocs build --strict
 
   release:
     name: Automated Semantic Release and PyPI Deploy
-    needs: test-and-lint
+    needs: [test-and-lint, documentation]
     runs-on: ubuntu-latest
     # Se agrega condición para evitar que el bot de la App genere bucles infinitos al hacer push
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.actor != 'automation-ruleset-bypass[bot]'

@@ -36,13 +36,9 @@ Legacy manager/pattern/environment/extras flags are
 rejected in this mode. Collisions and symlinks block generation; partial failure
 cleans only ownership-verified resources, preserving unrelated/changed content.
 
-These changes are **unreleased**. Source `__version__` now matches the existing
-distribution metadata, `0.5.0`; no release or version bump was made. Use the
-branch wheel, not the old published package with the same version. Select a new
-release version before publishing these breaking changes. The agreed next
-release is now **0.6.0**; the [release review](release-0.6.0.md) describes the
-versioning checks and remaining merge gates. The source version is deliberately
-left for semantic-release to update during the authorized release.
+The 0.7.0 release keeps API v1 Draft. Install the published version or a wheel
+built from the reviewed checkout; see [getting started](getting-started.md).
+The [0.7.0 release review](release-0.7.0.md) records audit evidence and gates.
 
 ## Project and Factory Contract
 
@@ -126,7 +122,8 @@ explicit policy's defaults). Other modes/guarantees fail before dataset I/O.
 Compilation checks the entire graph: repeated node objects/names, duplicate
 producers, cycles, schemas/references, signatures, access, bindings, policies,
 capabilities, and repeated publication destinations. Variadic and positional-only
-signatures are rejected. Required parameters must be mapped; Python defaults
+signatures are rejected. Coroutine, async-generator and generator transformations
+(including callable instances and partials) are rejected before execution. Required parameters must be mapped; Python defaults
 remain allowed. Stable topological order gives declaration priority to ready nodes.
 
 `validate` never imports pipelines. `run --dry-run` imports the trusted factory
@@ -215,7 +212,7 @@ still use its own logging/low-level I/O; this is not a security boundary.
 
 ```sh
 uv build --wheel --out-dir dist
-python tests/distribution/check_wheel.py dist/flint_core-0.5.0-py3-none-any.whl
+python tests/distribution/check_wheel.py dist/flint_core-0.7.0-py3-none-any.whl
 ```
 
 The checker creates an environment outside the checkout, installs the wheel

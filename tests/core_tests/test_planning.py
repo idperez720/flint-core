@@ -149,3 +149,58 @@ def test_newly_ready_node_keeps_priority_over_later_independent_node(tmp_path):
         }
     )
     assert [node.name for node in project.compile().nodes] == ["c", "a", "b", "d"]
+
+
+@pytest.mark.parametrize("kind", ["coroutine", "generator", "async_generator"])
+@pytest.mark.parametrize("wrapper", ["function", "partial", "instance", "method", "partial_instance"])
+def test_deferred_transformations_fail_before_any_execution(tmp_path, kind, wrapper):
+    async def coroutine():
+        return None
+
+    def generator():
+        yield None
+
+    async def async_generator():
+        yield None
+
+    function = {"coroutine": coroutine, "generator": generator, "async_generator": async_generator}[kind]
+
+    class Callable:
+        __call__ = staticmethod(function)
+
+    transformation = {
+        "function": function,
+        "partial": partial(function),
+        "instance": Callable(),
+        "method": Callable().__call__,
+        "partial_instance": partial(Callable()),
+    }[wrapper]
+    earlier = Node("earlier", lambda: None, {}, Output("source"))
+    invalid = Node("deferred", transformation, {}, Output("result"))
+    with pytest.raises(PlanError) as caught:
+        configured(tmp_path, [earlier, invalid]).compile()
+    assert caught.value.code == "unsupported_callable"
+    assert caught.value.node == "deferred"
+    assert not (tmp_path / "data").exists()
+
+
+def test_signature_error_identifies_node_without_raw_function_error(tmp_path):
+    with pytest.raises(PlanError) as caught:
+        configured(tmp_path, [Node("bad_signature", lambda required: None, {}, Output("result"))]).compile()
+    assert caught.value.code == "signature_mismatch"
+    assert caught.value.node == "bad_signature"
+
+
+def test_output_error_distinguishes_unknown_definition_from_duplicate_producer(tmp_path):
+    with pytest.raises(PlanError) as caught:
+        configured(tmp_path, [Node("unknown", lambda: None, {}, Output("missing"))]).compile()
+    assert (caught.value.code, caught.value.node, caught.value.dataset) == ("unknown_output", "unknown", "missing")
+    with pytest.raises(PlanError) as caught:
+        configured(
+            tmp_path,
+            [
+                Node("first", lambda: None, {}, Output("result")),
+                Node("second", lambda: None, {}, Output("result")),
+            ],
+        ).compile()
+    assert (caught.value.code, caught.value.node, caught.value.dataset) == ("duplicate_producer", "second", "result")

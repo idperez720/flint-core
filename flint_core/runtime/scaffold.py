@@ -135,16 +135,16 @@ Generation does not install anything or change an active environment.
 
 ## Install
 
-Create an environment with `python -m venv .venv`. Install the tested wheel from
-this branch, with the Pandas extra:
+Create an environment with `python -m venv .venv`. Install this version from
+the package registry, with the Pandas extra:
 
 ```sh
-.venv/bin/python -m pip install "/absolute/path/to/flint_core-{__version__}-py3-none-any.whl[pandas]"
+.venv/bin/python -m pip install "flint-core[pandas]=={__version__}"
 ```
 
-These changes are unreleased. Do not substitute the previously published package
-with the same version for the tested branch wheel. After release, use the new
-release version instead. Installing the project itself is not required.
+For an unreleased checkout, build and install its wheel with the Pandas extra
+instead. The version shown above must be published before registry installation
+works. Installing the generated project itself is not required.
 
 ## Validate and Run
 
@@ -209,11 +209,12 @@ directory rename and directory fsync. Remote publication is not supported.
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install "/absolute/path/to/flint_core-{__version__}-py3-none-any.whl[spark-delta]"
+.venv/bin/python -m pip install "flint-core[spark-delta]=={__version__}"
 ```
 
-These changes are unreleased; use the branch wheel, not the old published package
-with the same version. Select a new release version before publication.
+For an unreleased checkout, build and install its wheel with the spark-delta
+extra instead. The version above must be published before registry installation
+works.
 
 ## Validate and Run
 

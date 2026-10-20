@@ -1,5 +1,9 @@
 # ⚙️ Engines, Formats, and Cloud Platforms Reference
 
+This page describes **legacy I/O adapters**. Installing an extra does not add a
+Catalog v1 binding. The v1 Runtime supports only local `pandas.csv`, `pandas.delta`
+and `spark.delta`; see [extension boundaries](runtime-api.md#extension-boundaries).
+
 `flint` uses an Inversion of Control (IoC) registry model to strictly decouple the
 computational execution driver (`engine`) from the serialization schema (`format`)
 and physical target storage infrastructure (`storage_path` URI protocols).

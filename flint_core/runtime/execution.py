@@ -69,12 +69,12 @@ def execute(plan, *, spark=None, spark_local=False):
 
             session, owns_session = open_session(spark, local=spark_local)
             frames = SparkFrames(session)
-            validator = frames
+            validate_output = frames.validate
         else:
-            from flint_core.runtime.frames import _pandas
+            from flint_core.runtime.frames import _pandas, validate_pandas
 
             _pandas()
-            validator = LocalCsvAdapter()
+            validate_output = validate_pandas
         adapters = {"pandas.csv": LocalCsvAdapter(), "pandas.delta": PandasDeltaAdapter()}
         if frames is not None:
             adapters["spark.delta"] = SparkDeltaAdapter(frames)
@@ -97,7 +97,7 @@ def execute(plan, *, spark=None, spark_local=False):
             raw_output = node.func(**arguments)
             phase = "validation"
             output = node.outputs.dataset
-            owned = validator.validate(raw_output, snapshot.definitions[output])
+            owned = validate_output(raw_output, snapshot.definitions[output])
             if node.outputs.write is not None:
                 phase = "publication"
                 try:

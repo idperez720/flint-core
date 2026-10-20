@@ -7,6 +7,36 @@ from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import click
 
 from flint_core import FlintProject
+from flint_core.runtime.errors import PlanError, ProjectError
+
+_PLAN_HINTS = {
+    "pipeline_selection": "Select a registered --pipeline or configure default_pipeline in pyproject.toml.",
+    "unknown_output": "Declare each node output in the selected dataset definitions.",
+    "duplicate_producer": "Give each logical dataset exactly one producer in the pipeline.",
+    "signature_mismatch": "Match node input and resource parameter names to the transformation signature.",
+    "unsupported_callable": "Use synchronous transformations returning one DataFrame; avoid iterators and coroutines.",
+    "graph_cycle": "Remove circular dataset dependencies, including nodes reading their own output.",
+}
+_HINTS = {
+    "project_configuration_failed": "Check pyproject.toml, --env, catalog manifests and the pipeline factory.",
+    "plan_failed": "Check node declarations, signatures, bindings, engine compatibility and graph dependencies.",
+    "configuration_or_plan_failed": "Check project configuration and trusted factory code using the Python API.",
+    "preflight_failed": "Check engine extras, sources and absent output targets with existing parents.",
+    "read_failed": "Check input bindings, local files and the declared dataset schema.",
+    "transformation_failed": "Test the failed node's transformation directly with representative inputs.",
+    "validation_failed": "Return one DataFrame matching the output dataset contract.",
+    "data_validation_failed": "Check engine setup, column types, nullability, uniqueness and local dataset paths.",
+    "publication_failed": "Inspect the output target and cleanup flag; create never replaces an existing dataset.",
+    "publication_uncertain": "Inspect the target and staging artifacts manually; do not retry automatically.",
+}
+
+
+def _diagnostic(summary):
+    code = summary.get("error_code")
+    hint = _PLAN_HINTS.get(summary.get("plan_error")) or _HINTS.get(code)
+    if hint:
+        summary["hint"] = hint
+    return summary
 
 
 def _perform(path, environment, pipeline, dry_run, metadata_only, spark_local=False):
@@ -46,9 +76,30 @@ def _command(path, environment, pipeline, dry_run, metadata_only, json_output, s
                 summary, code = _perform(path, environment, pipeline, dry_run, metadata_only, spark_local)
         else:
             summary, code = _perform(path, environment, pipeline, dry_run, metadata_only, spark_local)
+    except PlanError as error:
+        summary, code = (
+            {
+                "status": "failed",
+                "error_code": "plan_failed",
+                "plan_error": error.code
+                if isinstance(error.code, str) and error.code in _PLAN_HINTS
+                else "invalid_plan",
+            },
+            2,
+        )
+    except ProjectError:
+        summary, code = {"status": "failed", "error_code": "project_configuration_failed"}, 2
     except Exception:
         summary, code = {"status": "failed", "error_code": "configuration_or_plan_failed"}, 2
-    click.echo(json.dumps(summary) if json_output else summary["status"] + ": " + summary.get("error_code", "ok"))
+    _diagnostic(summary)
+    if json_output:
+        click.echo(json.dumps(summary))
+    elif code:
+        click.echo(summary["status"] + ": " + summary["error_code"] + ". " + summary.get("hint", ""))
+    else:
+        click.echo(
+            summary["status"] + ": " + json.dumps({key: value for key, value in summary.items() if key != "status"})
+        )
     if code:
         raise click.exceptions.Exit(code)
 

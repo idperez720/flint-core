@@ -224,7 +224,6 @@ dev/create-release/*final
 dev/create-release/*txt
 dev/pr-deps/
 docs/_site
-docs/api
 sql/docs
 sql/site
 lib_managed/

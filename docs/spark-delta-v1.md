@@ -9,14 +9,13 @@ every pending ADR or certify cloud/Databricks execution.
 
 ## Generate and Run a Spark Project
 
-Use the unreleased wheel built from this branch, not the previously published
-package with the same `0.5.0` version. The agreed next release is **0.6.0**;
-the source version will be updated by semantic-release during the authorized
-release. See the [release review](release-0.6.0.md).
+Install the published 0.7.0 package with the Spark Delta extra. For an
+unreleased checkout, build and install its wheel instead. See the
+[release review](release-0.7.0.md) for verification gates.
 
 ```sh
 python -m venv .venv
-.venv/bin/python -m pip install '/path/to/branch/flint_core-0.5.0-py3-none-any.whl[spark-delta]'
+.venv/bin/python -m pip install "flint-core[spark-delta]==0.7.0"
 .venv/bin/flint init --format v1 --engine spark --path ./customers --no-input
 .venv/bin/flint validate --project ./customers --json
 .venv/bin/flint run --project ./customers --dry-run --json
@@ -225,8 +224,8 @@ Run source regressions with `pytest tests --spark-delta`; see
 
 ```sh
 uv build --wheel --out-dir dist
-python tests/distribution/check_spark_delta_wheel.py dist/flint_core-0.5.0-py3-none-any.whl
-python tests/distribution/check_wheel.py dist/flint_core-0.5.0-py3-none-any.whl
+python tests/distribution/check_spark_delta_wheel.py dist/flint_core-0.7.0-py3-none-any.whl
+python tests/distribution/check_wheel.py dist/flint_core-0.7.0-py3-none-any.whl
 ```
 
 CI is configured to provide Java 17 and run the Spark-enabled complete suite on
