@@ -9,6 +9,8 @@ Prepared October 20, 2026. Publication is pending the gates in the
   transformations, including partial functions and callable instances. This
   prevents an invalid deferred transformation from failing only after earlier
   nodes have processed or published data.
+- Pandas output validation calls the shared frame validator directly, removing
+  an unnecessary CSV-adapter dependency from native Delta execution.
 - Public imports for existing `ExecutionPlan`, `RunResult`, `Publication` and
   typed errors from `flint_core.runtime`; existing declaration imports remain.
 - Specific plan error codes with optional node/dataset context for Python callers.

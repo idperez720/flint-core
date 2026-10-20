@@ -796,3 +796,15 @@ def test_directory_create_never_replaces_even_an_empty_competing_directory(tmp_p
             directory.DirectoryPublisher().publish(project.catalog.snapshot, "result", prepare)
     assert list((tmp_path / "data/result").iterdir()) == []
     assert not list((tmp_path / "data").glob(".flint-delta-*"))
+
+
+def test_pandas_delta_runtime_validation_is_independent_of_csv_adapter(tmp_path):
+    from flint_core.runtime.local_csv import LocalCsvAdapter
+
+    project = load_project(tmp_path, engine="pandas")
+    seed(project)
+    with patch.object(LocalCsvAdapter, "validate", side_effect=AssertionError("CSV must not validate Delta frames")):
+        result = project.run()
+    assert result.success, result.to_dict()
+    assert result.publications[0].state == "committed"
+    assert PandasDeltaAdapter().read(project.catalog.snapshot, "result")["id"].tolist() == [0, 1]
