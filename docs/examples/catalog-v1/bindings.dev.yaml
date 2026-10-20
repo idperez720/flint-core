@@ -1,0 +1,12 @@
+schema_version: 1
+kind: DatasetBindings
+environment: dev
+bindings:
+  raw.customers:
+    adapter: pandas.csv
+    format: csv
+    target:
+      kind: file
+      path: data/customers.csv
+    access: read_only
+    options: {}

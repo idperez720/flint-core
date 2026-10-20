@@ -9,13 +9,13 @@ from flint_core.core.exceptions import (
     CircularDependencyError,
     PipelineExecutionError,
 )
-from flint_core.core.io import DataLoader, DataSaver
+from flint_core.core.io import DataLoader, DataSaver, _validate_write_mode
 
 
 class Node:
     """Stateless execution unit anchoring functional transforms to catalog assets."""
 
-    __slots__ = ("name", "func", "inputs", "outputs", "tags")
+    __slots__ = ("name", "func", "inputs", "outputs", "tags", "write_modes")
 
     def __init__(
         self,
@@ -24,6 +24,7 @@ class Node:
         inputs: List[str],
         outputs: List[str],
         tags: Optional[List[str]] = None,
+        write_modes: Optional[Dict[str, str]] = None,
     ) -> None:
         """Initializes an autonomous processing Node bound to multiple outputs.
 
@@ -33,6 +34,7 @@ class Node:
             inputs: List of declarative catalog dataset lookup keys as inputs.
             outputs: List of destination catalog token keys to persist results.
             tags: Optional operational categorization metadata attributes.
+            write_modes: Per-output modes; omitted outputs use non-overwriting 'error'.
         """
         if not name or not isinstance(name, str):
             raise ValueError("Node 'name' must be a non-empty string.")
@@ -40,12 +42,19 @@ class Node:
             raise TypeError(f"Node '{name}' execution target must be callable.")
         if not outputs:
             raise ValueError(f"Node '{name}' must declare at least one output.")
+        resolved_modes = dict(write_modes) if write_modes is not None else {}
+        unknown_outputs = set(resolved_modes) - set(outputs)
+        if unknown_outputs:
+            raise ValueError(f"Node '{name}' has write modes for undeclared outputs: {sorted(unknown_outputs)}.")
+        for mode in resolved_modes.values():
+            _validate_write_mode(mode)
 
         self.name: str = name
         self.func: Callable[..., Any] = func
         self.inputs: List[str] = inputs
         self.outputs: List[str] = outputs
         self.tags: List[str] = tags if tags is not None else []
+        self.write_modes: Dict[str, str] = resolved_modes
 
     def _unpack_and_persist(self, raw_output: Any, saver: DataSaver, spark: Optional[Any] = None) -> Dict[str, Any]:
         """Maps polymorphic function returns into explicit catalog targets.
@@ -88,7 +97,7 @@ class Node:
                 )
 
         for out_name, df in output_map.items():
-            saver.save(df, out_name, mode="overwrite", spark=spark)
+            saver.save(df, out_name, mode=self.write_modes.get(out_name, "error"), spark=spark)
 
         return output_map
 

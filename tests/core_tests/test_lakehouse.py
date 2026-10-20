@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
 
 from flint_core.core.catalog import DataCatalog
@@ -45,8 +43,8 @@ def test_lakehouse_time_travel_options_propagation(tmp_path: Path) -> None:
         mock_deltalake.DeltaTable.assert_called_once_with(
             str((tmp_path / "data/lakehouse/gold_tx").resolve()),
             version=12,
-            datetime=None,
         )
+        mock_table.load_as_version.assert_not_called()
 
 
 def test_lakehouse_time_travel_as_of_propagation(tmp_path: Path) -> None:
@@ -82,5 +80,5 @@ def test_lakehouse_time_travel_as_of_propagation(tmp_path: Path) -> None:
         mock_deltalake.DeltaTable.assert_called_once_with(
             str((tmp_path / "data/lakehouse/gold_ts").resolve()),
             version=None,
-            datetime="2026-06-27T00:00:00Z",
         )
+        mock_table.load_as_version.assert_called_once_with("2026-06-27T00:00:00Z")

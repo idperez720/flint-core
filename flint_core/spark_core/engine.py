@@ -33,8 +33,7 @@ from flint_core.core.exceptions import (
     ColumnValidationError,
     UnsupportedBackendError,
 )
-from flint_core.spark_core.deduplication import SparkDeduplicationMixin
-from flint_core.spark_core.scd2 import SparkSCD2Mixin
+from flint_core.core.io import _validate_replace_where, _validate_write_mode, _validate_write_options
 
 logger = logging.getLogger(__name__)
 
@@ -92,14 +91,14 @@ class SparkDatabaseFormatHandler(SparkFormatHandler, abc.ABC):
 # =============================================================================
 
 
-class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataFrame]):
+class SparkEngine(BaseEngine[SparkDataFrame]):
     """Enterprise PySpark engine orchestrating advanced multi-format schemas.
 
     Handles explicit struct field schema building, in-memory date schema string
     conversions fallbacks, and multi-cloud credential injections contexts.
     """
 
-    __slots__ = ()
+    __slots__ = ("__dict__",)
 
     SPARK_TYPE_MAP: ClassVar[Dict[str, DataType]] = {
         "string": StringType(),
@@ -255,22 +254,17 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
         spark: Optional[SparkSession] = None,
     ) -> None:
         """Saves a distributed Spark DataFrame with schema verification."""
+        _validate_write_mode(mode)
+        replace_where = metadata.get("replace_where") if metadata else None
+        _validate_replace_where(replace_where, mode, data_format)
+        options = dict(metadata.get("options", {})) if metadata else {}
+        _validate_write_options(options)
         session = spark if spark is not None else SparkSession.getActiveSession()
         if session is None or getattr(session, "_sc", None) is None:
             raise ValueError("No active distributed SparkSession could be resolved.")
 
         self._inject_infrastructure(session, metadata)
         handler = self._resolve_format_handler(data_format)
-        writer = df.write.mode(mode)
-
-        if metadata and metadata.get("replace_where"):
-            writer = writer.option("replaceWhere", metadata["replace_where"])
-
-        if metadata and "options" in metadata:
-            opts = metadata["options"]
-            if isinstance(opts, dict):
-                writer = writer.options(**opts)
-
         if columns and data_format.strip().lower() not in (
             "delta",
             "iceberg",
@@ -294,6 +288,11 @@ class SparkEngine(SparkDeduplicationMixin, SparkSCD2Mixin, BaseEngine[SparkDataF
                 )
             df = df.select(*catalog_names)
 
+        writer = df.write.mode(mode)
+        if replace_where is not None:
+            writer = writer.option("replaceWhere", replace_where)
+        if options:
+            writer = writer.options(**options)
         handler.write(writer, path)
 
 

@@ -14,11 +14,9 @@ from typing import (
     Optional,
     Type,
     TypeVar,
-    Union,
 )
 
 from flint_core.core.exceptions import (
-    ColumnValidationError,
     UnsupportedBackendError,
 )
 
@@ -72,39 +70,6 @@ class BaseEngine(abc.ABC, Generic[DataFrameT]):
         keyword = cls.__name__.replace("Engine", "").lower()
         if keyword:
             EngineRegistry._REGISTRY[keyword] = cls
-
-    def _validate_columns(self, df: Any, columns: List[str]) -> None:
-        """Universal utility to validate column existence safely."""
-        df_cols = getattr(df, "columns", [])
-        missing = [col for col in columns if col not in df_cols]
-        if missing:
-            raise ColumnValidationError(f"The following required columns are missing from the DataFrame: {missing}")
-
-    @abc.abstractmethod
-    def latest(self, df: DataFrameT, keys: List[str], order_by_col: str) -> DataFrameT:
-        """Abstract implementation requirement for latest() protocol."""
-        pass
-
-    @abc.abstractmethod
-    def first(self, df: DataFrameT, keys: List[str], order_by_col: str) -> DataFrameT:
-        """Abstract implementation requirement for first() protocol."""
-        pass
-
-    @abc.abstractmethod
-    def by_order(
-        self,
-        df: DataFrameT,
-        keys: List[str],
-        order_by_cols: List[str],
-        ascending: Union[bool, List[bool]] = True,
-    ) -> DataFrameT:
-        """Abstract implementation requirement for by_order() protocol."""
-        pass
-
-    @abc.abstractmethod
-    def combined(self, df: DataFrameT, keys: List[str]) -> DataFrameT:
-        """Abstract implementation requirement for combined() protocol."""
-        pass
 
     @abc.abstractmethod
     def load(

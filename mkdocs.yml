@@ -51,8 +51,15 @@ nav:
   - Getting Started: getting-started.md
   - User Guide:
       - Data Catalog & Environments: catalog.md
+      - Catalog v1 (Opt-in): catalog-v1.md
+      - Minimum Project Workflow: project-workflow.md
+      - Spark-First Delta Workflow v1: spark-delta-v1.md
       - Data Ingestion & Persistence (I/O): io-guide.md
       - Engines, Formats & Platforms: engines-platforms.md
+      - Local Spark Testing: spark-testing.md
+      - Local Delta Testing: delta-testing.md
+      - Migration Notes: migration.md
+      - 0.6.0 Release Review: release-0.6.0.md
   - API Reference:
       - Data Catalog: api/catalog.md
       - Data Loader (I/O): api/io.md

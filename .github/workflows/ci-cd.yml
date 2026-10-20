@@ -29,6 +29,12 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
+      - name: Set up Java for required Spark safety and core coverage
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
       - name: Load Cached Virtualenv
         id: cached-poetry-dependencies
         uses: actions/cache@v4
@@ -53,7 +59,9 @@ jobs:
         run: poetry run ruff format --check ./flint_core/
 
       - name: Run Tests with Strict Coverage Gate (>= 60%)
-        run: poetry run pytest --cov=flint_core --cov-fail-under=60
+        env:
+          SPARK_LOCAL_IP: 127.0.0.1
+        run: PYSPARK_PYTHON="$PWD/.venv/bin/python" poetry run pytest --spark-delta --cov=flint_core --cov-fail-under=60 --junitxml=test-results/safety-core-spark.xml
 
   release:
     name: Automated Semantic Release and PyPI Deploy

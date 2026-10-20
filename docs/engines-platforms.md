@@ -45,6 +45,24 @@ on the combination of the declared format and engine fields.
 | `iceberg` | `spark` | Open enterprise multi-engine lake tables management |
 | `table` | `pandas`, `spark` | Relational database mapping channels (JDBC/ODBC) |
 
+### Conditional overwrite safety
+
+`catalog.save(..., mode="overwrite", replace_where="id = 1")` supports only the
+`delta` format, using the backend's native predicate support. The condition must
+be a non-empty string, and the mode must be explicitly set to `overwrite`.
+Pandas passes the condition as `predicate`; Spark uses `replaceWhere`. The required
+Delta integration must be installed and configured for the selected engine.
+
+CSV, Parquet, JSON, ORC, Iceberg, and database formats reject `replace_where` with
+`UnsupportedBackendError` before dataset I/O. The previous Pandas read/filter/rewrite
+simulation has been removed: a read or predicate failure must never become a full
+overwrite. Empty, whitespace-only, or non-string conditions raise `ValueError`.
+
+This is an intentional compatibility change. A rejected conditional write must
+not be retried by dropping its condition or changing it to a full overwrite.
+Delta backend failures propagate to the caller; this restriction does not provide
+a transaction across multiple datasets or automatically retry failed writes.
+
 ---
 
 ## 3. Storage Platforms & Cloud Providers Configuration
